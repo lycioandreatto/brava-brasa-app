@@ -7048,17 +7048,16 @@ elif menu_interna == "📚 Perfil do Cliente":
         _card_menor("Última compra", ultima_compra.strftime("%d/%m/%Y"))
 
     with m2:
-        st.metric("Dias sem comprar", dias_sem)
+        _card_menor("Dias sem comprar", str(dias_sem))
 
     with m3:
-        st.metric("Pedidos no período", int(pedidos_unicos))
+        _card_menor("Pedidos no período", str(int(pedidos_unicos)))
 
     with m4:
-        st.metric("Volume total", f"{volume_total:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        _card_menor("Volume total", f"{volume_total:,.0f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
     with m5:
-        st.metric("Mix médio (SKUs/pedido)", f"{mix_medio:.1f}")
-
+        _card_menor("Mix médio (SKUs/pedido)", f"{mix_medio:.1f}")
     with m6:
         _card_menor("Frequência esperada", freq_esperada_txt)
 

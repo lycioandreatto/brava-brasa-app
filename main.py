@@ -5097,7 +5097,6 @@ elif menu_interna == "🧪 TESTES":
     st.markdown("---")
 
 
-
 # --- PÁGINA: SALDO ---
 elif menu == "💼 SALDO":
     import pandas as pd
@@ -5144,7 +5143,6 @@ elif menu == "💼 SALDO":
         return pd.to_numeric(series, errors="coerce").fillna(0.0)
 
     def _to_dt(series):
-        # tenta primeiro dayfirst=True, se falhar tenta normal
         s1 = pd.to_datetime(series, errors="coerce", dayfirst=True)
         if s1.notna().sum() == 0:
             s1 = pd.to_datetime(series, errors="coerce")
@@ -5180,6 +5178,33 @@ elif menu == "💼 SALDO":
             if c in df.columns:
                 return c
         return None
+
+    def _semaforo_pedido(dias, status):
+        try:
+            dias = int(dias)
+        except Exception:
+            dias = 0
+        s = _norm_txt(status)
+
+        if ("BLOQUEADO" in s) or ("FINANCEIRO" in s) or dias >= 21:
+            return "🔴 Crítico"
+        if ("CORTE" in s) or ("PÓS-LIBERAÇÃO" in s) or ("POS-LIBERACAO" in s) or dias >= 10:
+            return "🟡 Atenção"
+        return "🟢 Monitorar"
+
+    def _acao_sugerida(status):
+        s = _norm_txt(status)
+        if "FINANCEIRO" in s:
+            return "Financeiro"
+        if "BLOQUEADO" in s:
+            return "Comercial + Cadastro"
+        if "CORTE" in s or "ESTOQUE" in s:
+            return "Logística/Estoque"
+        if "REMESSA" in s or "EXPEDIÇÃO" in s or "EXPEDICAO" in s:
+            return "Logística"
+        if "PÓS-LIBERAÇÃO" in s or "POS-LIBERACAO" in s:
+            return "Faturamento/Comercial"
+        return "Comercial"
 
     # ============================
     # 1) Leitura das abas (SALDO / FATURADO / SKUS)
@@ -5239,14 +5264,12 @@ elif menu == "💼 SALDO":
             if old in df_saldo.columns and new not in df_saldo.columns:
                 df_saldo = df_saldo.rename(columns={old: new})
 
-        # colunas mínimas
         required = ["DATA_CRIACAO", "DOC_VENDA", "CLIENTE_NOME", "CLIENTE_COD", "QTD_NAO_FAT"]
         faltando = [c for c in required if c not in df_saldo.columns]
         if faltando:
             st.error(f"Faltam colunas obrigatórias na SALDO: {faltando}")
             st.stop()
 
-        # Tipos
         df_saldo["DATA_CRIACAO"] = _to_dt(df_saldo["DATA_CRIACAO"])
         if "DATA_LIBERACAO" in df_saldo.columns:
             df_saldo["DATA_LIBERACAO"] = _to_dt(df_saldo["DATA_LIBERACAO"])
@@ -5260,8 +5283,6 @@ elif menu == "💼 SALDO":
                 df_saldo[c] = df_saldo[c].apply(_safe_str)
 
         df_saldo = df_saldo.dropna(subset=["DATA_CRIACAO"]).copy()
-
-        # mantém só linhas com algo em aberto
         df_saldo["QTD_NAO_FAT"] = _to_num(df_saldo["QTD_NAO_FAT"])
         df_saldo = df_saldo[df_saldo["QTD_NAO_FAT"] > 0].copy()
 
@@ -5270,16 +5291,14 @@ elif menu == "💼 SALDO":
             st.stop()
 
         # ============================
-        # 3) Padronização FATURADO (para cruzar histórico)
+        # 3) Padronização FATURADO
         # ============================
         df_fat = None
         if df_fat_raw is not None and not df_fat_raw.empty:
             df_fat = df_fat_raw.copy()
 
-            # Mapeamento flexível (porque pode haver nomes duplicados/variantes)
             col_cliente_nome = _first_existing(df_fat, ["Cliente", "CLIENTE"])
-            # código do cliente pode vir duplicado; tenta pelos candidatos
-            col_cliente_cod = _first_existing(df_fat, ["Cliente.1", "CLIENTE_COD", "Cliente Código", "Cliente codigo", "Cliente cód", "Cliente"])
+            col_cliente_cod = _first_existing(df_fat, ["Cliente.1", "CLIENTE_COD", "Cliente Código", "Cliente codigo", "Cliente cód"])
             col_analista = _first_existing(df_fat, ["ANALISTA", "Analista"])
             col_estado = _first_existing(df_fat, ["EscrV", "ESTADO"])
             col_dtfat = _first_existing(df_fat, ["Data fat.", "Data fat", "DATA_FAT"])
@@ -5301,24 +5320,37 @@ elif menu == "💼 SALDO":
             df_fat = df_fat[fat_keep].copy()
 
             rename_fat = {}
-            if col_analista: rename_fat[col_analista] = "ANALISTA"
-            if col_estado: rename_fat[col_estado] = "ESTADO"
-            if col_dtfat: rename_fat[col_dtfat] = "DATA_FAT"
-            if col_eqvs: rename_fat[col_eqvs] = "COD_SUP"
-            if col_rg: rename_fat[col_rg] = "COD_VEND"
-            if col_vend_nome: rename_fat[col_vend_nome] = "VENDEDOR_NOME"
-            if col_cliente_nome: rename_fat[col_cliente_nome] = "CLIENTE_NOME"
-            if col_cliente_cod: rename_fat[col_cliente_cod] = "CLIENTE_COD"
-            if col_pedido: rename_fat[col_pedido] = "DOC_VENDA"
-            if col_hier: rename_fat[col_hier] = "HIERARQUIA"
-            if col_sku_nome: rename_fat[col_sku_nome] = "SKU_NOME"
-            if col_qtd: rename_fat[col_qtd] = "QTD_FATURADA"
-            if col_receita: rename_fat[col_receita] = "RECEITA"
-            if col_cidade: rename_fat[col_cidade] = "CIDADE"
+            if col_analista:
+                rename_fat[col_analista] = "ANALISTA"
+            if col_estado:
+                rename_fat[col_estado] = "ESTADO"
+            if col_dtfat:
+                rename_fat[col_dtfat] = "DATA_FAT"
+            if col_eqvs:
+                rename_fat[col_eqvs] = "COD_SUP"
+            if col_rg:
+                rename_fat[col_rg] = "COD_VEND"
+            if col_vend_nome:
+                rename_fat[col_vend_nome] = "VENDEDOR_NOME"
+            if col_cliente_nome:
+                rename_fat[col_cliente_nome] = "CLIENTE_NOME"
+            if col_cliente_cod:
+                rename_fat[col_cliente_cod] = "CLIENTE_COD"
+            if col_pedido:
+                rename_fat[col_pedido] = "DOC_VENDA"
+            if col_hier:
+                rename_fat[col_hier] = "HIERARQUIA"
+            if col_sku_nome:
+                rename_fat[col_sku_nome] = "SKU_NOME"
+            if col_qtd:
+                rename_fat[col_qtd] = "QTD_FATURADA"
+            if col_receita:
+                rename_fat[col_receita] = "RECEITA"
+            if col_cidade:
+                rename_fat[col_cidade] = "CIDADE"
 
             df_fat = df_fat.rename(columns=rename_fat)
 
-            # Tipos FAT
             if "DATA_FAT" in df_fat.columns:
                 df_fat["DATA_FAT"] = _to_dt(df_fat["DATA_FAT"])
             for c in ["QTD_FATURADA", "RECEITA"]:
@@ -5328,7 +5360,6 @@ elif menu == "💼 SALDO":
                 if c in df_fat.columns:
                     df_fat[c] = df_fat[c].apply(_safe_str)
 
-            # Chaves normalizadas
             if "CLIENTE_COD" in df_fat.columns:
                 df_fat["CLIENTE_COD_N"] = df_fat["CLIENTE_COD"].astype(str).str.replace(".0", "", regex=False).str.strip()
             else:
@@ -5340,7 +5371,7 @@ elif menu == "💼 SALDO":
             df_fat["COD_VEND_N"] = df_fat["COD_VEND"].apply(_norm_txt) if "COD_VEND" in df_fat.columns else ""
 
         # ============================
-        # 4) Padronização SKUS (fallback)
+        # 4) Padronização SKUS
         # ============================
         df_skus = None
         if df_skus_raw is not None and not df_skus_raw.empty:
@@ -5373,7 +5404,6 @@ elif menu == "💼 SALDO":
         df["DIAS_ABERTO"] = df["DIAS_ABERTO"].fillna(0).astype(int)
         df["FAIXA_ATRASO"] = df["DIAS_ABERTO"].apply(_bucket_days)
 
-        # Status resumido
         def _status_operacional_row(r):
             sg = _norm_txt(r.get("SGCR", ""))
             qped = float(r.get("QTD_PEDIDA", 0) or 0)
@@ -5480,7 +5510,7 @@ elif menu == "💼 SALDO":
         )
 
         # ============================
-        # 8) Aging + Status (visão rápida)
+        # 8) Aging + Status
         # ============================
         st.markdown("---")
         c_a1, c_a2 = st.columns([0.45, 0.55])
@@ -5510,12 +5540,11 @@ elif menu == "💼 SALDO":
             st.dataframe(g_st, use_container_width=True, hide_index=True)
 
         # ============================
-        # 9) Prioridades de ação (clientes / pedidos)
+        # 9) Prioridades de ação
         # ============================
         st.markdown("---")
         st.subheader("🔥 Prioridades de ação")
 
-        # Consolidado por pedido
         agg_map = {
             "DATA_CRIACAO": ("DATA_CRIACAO", "min"),
             "DIAS_ABERTO": ("DIAS_ABERTO", "max"),
@@ -5530,7 +5559,6 @@ elif menu == "💼 SALDO":
         }
         ped = df_f.groupby("DOC_VENDA", as_index=False).agg(**agg_map)
 
-        # score simples e explicável
         ped["PESO_STATUS"] = ped["STATUS_OPERACIONAL"].map({
             "Bloqueado": 40,
             "Financeiro": 35,
@@ -5542,6 +5570,9 @@ elif menu == "💼 SALDO":
         }).fillna(10)
 
         max_qtd = ped["QTD_NAO_FAT"].max() if len(ped) > 0 else 1
+        if max_qtd <= 0:
+            max_qtd = 1
+
         ped["SCORE"] = (ped["DIAS_ABERTO"] * 2.0) + ((ped["QTD_NAO_FAT"] / max_qtd) * 40.0) + ped["PESO_STATUS"]
         ped = ped.sort_values(["SCORE", "DIAS_ABERTO", "QTD_NAO_FAT"], ascending=[False, False, False]).copy()
 
@@ -5579,39 +5610,132 @@ elif menu == "💼 SALDO":
             st.dataframe(show_ped[cols_ped], use_container_width=True, hide_index=True)
 
         # ============================
-        # 10) Insight Comercial Inteligente (com sugestão de SKUs)
+        # 10) Insight Comercial Inteligente (com sugestão de SKUs) + TABELA + SEMÁFORO
         # ============================
-                    st.markdown("---")
-            st.subheader("🧠 Insight Comercial Inteligente (cliente em atraso + sugestão de SKUs)")
+        st.markdown("---")
+        st.subheader("🧠 Insight Comercial Inteligente (cliente em atraso + sugestão de SKUs)")
 
-            st.caption(
-                "Lógica: pega pedidos críticos do SALDO e sugere SKUs com base no histórico do FATURADO "
-                "(cliente primeiro, depois carteira do vendedor), sempre respeitando a mesma hierarquia. "
-                "Se não houver histórico suficiente, usa a aba SKUS por hierarquia."
-            )
+        st.caption(
+            "Lógica: pega pedidos críticos do SALDO e sugere SKUs com base no histórico do FATURADO "
+            "(cliente primeiro, depois carteira do vendedor), sempre respeitando a mesma hierarquia. "
+            "Se não houver histórico suficiente, usa a aba SKUS por hierarquia."
+        )
+
+        ped_crit = ped[ped["DIAS_ABERTO"] >= 10].head(30).copy()
+
+        if ped_crit.empty:
+            st.success("Nenhum pedido com 10+ dias no filtro atual.")
+        else:
+            insights_rows = []
+
+            for _, p in ped_crit.iterrows():
+                doc = _safe_str(p.get("DOC_VENDA", ""))
+                cliente_cod_n = _safe_str(p.get("CLIENTE_COD_N", ""))
+                cliente_nome = _safe_str(p.get("CLIENTE_NOME", ""))
+                cod_vend = _safe_str(p.get("COD_VEND", ""))
+                dias = int(p.get("DIAS_ABERTO", 0) or 0)
+                status_op = _safe_str(p.get("STATUS_OPERACIONAL", ""))
+                qtd_nf = float(p.get("QTD_NAO_FAT", 0) or 0)
+
+                linhas_pedido = df_f[df_f["DOC_VENDA"] == doc].copy()
+                skus_pedido = _top_list(linhas_pedido["SKU_NOME"].tolist() if "SKU_NOME" in linhas_pedido.columns else [], n=8)
+                hiers_pedido = _top_list(linhas_pedido["HIERARQUIA"].tolist() if "HIERARQUIA" in linhas_pedido.columns else [], n=5)
+
+                # sempre mesma hierarquia
+                hiers_norm = [_norm_txt(h) for h in hiers_pedido if _safe_str(h) != ""]
+
+                fonte_sug = "Sem sugestão"
+                sugestoes = []
+
+                # 1) Histórico do cliente (mesma hierarquia)
+                if df_fat is not None and not df_fat.empty:
+                    fat_cliente = df_fat.copy()
+
+                    if cliente_cod_n and "CLIENTE_COD_N" in fat_cliente.columns:
+                        fat_cliente = fat_cliente[fat_cliente["CLIENTE_COD_N"] == cliente_cod_n].copy()
+                    else:
+                        fat_cliente = fat_cliente[fat_cliente["CLIENTE_NOME_N"] == _norm_txt(cliente_nome)].copy()
+
+                    fat_carteira = pd.DataFrame()
+                    if cod_vend and "COD_VEND_N" in df_fat.columns:
+                        fat_carteira = df_fat[df_fat["COD_VEND_N"] == _norm_txt(cod_vend)].copy()
+
+                    if not fat_cliente.empty and "SKU_NOME" in fat_cliente.columns and "HIERARQUIA" in fat_cliente.columns and hiers_norm:
+                        fat_cliente["HIER_N"] = fat_cliente["HIERARQUIA"].apply(_norm_txt)
+                        hist_same_h = fat_cliente[fat_cliente["HIER_N"].isin(hiers_norm)].copy()
+
+                        if not hist_same_h.empty:
+                            g_sku = (
+                                hist_same_h.groupby("SKU_NOME", as_index=False)
+                                .agg(QTD=("QTD_FATURADA", "sum") if "QTD_FATURADA" in hist_same_h.columns else ("SKU_NOME", "size"))
+                                .sort_values("QTD", ascending=False)
+                            )
+                            skus_pedido_norm = [_norm_txt(x) for x in skus_pedido]
+                            cand = [s for s in g_sku["SKU_NOME"].tolist() if _norm_txt(s) not in skus_pedido_norm]
+                            sugestoes = _top_list(cand, n=5)
+
+                        if sugestoes:
+                            fonte_sug = "Histórico do cliente (FATURADO)"
+
+                    # 2) Carteira do vendedor (mesma hierarquia)
+                    if (not sugestoes) and (not fat_carteira.empty) and ("SKU_NOME" in fat_carteira.columns) and ("HIERARQUIA" in fat_carteira.columns) and hiers_norm:
+                        fat_carteira["HIER_N"] = fat_carteira["HIERARQUIA"].apply(_norm_txt)
+                        hist_cart_h = fat_carteira[fat_carteira["HIER_N"].isin(hiers_norm)].copy()
+
+                        if not hist_cart_h.empty:
+                            g_sku2 = (
+                                hist_cart_h.groupby("SKU_NOME", as_index=False)
+                                .agg(QTD=("QTD_FATURADA", "sum") if "QTD_FATURADA" in hist_cart_h.columns else ("SKU_NOME", "size"))
+                                .sort_values("QTD", ascending=False)
+                            )
+                            skus_pedido_norm = [_norm_txt(x) for x in skus_pedido]
+                            cand2 = [s for s in g_sku2["SKU_NOME"].tolist() if _norm_txt(s) not in skus_pedido_norm]
+                            sugestoes = _top_list(cand2, n=5)
+
+                        if sugestoes:
+                            fonte_sug = "Carteira do vendedor (FATURADO)"
+
+                # 3) Fallback aba SKUS (mesma hierarquia)
+                if (not sugestoes) and (df_skus is not None) and hiers_norm:
+                    base_skus = df_skus.copy()
+                    base_skus["HIER_N"] = base_skus["HIERARQUIA"].apply(_norm_txt)
+                    base_skus = base_skus[base_skus["HIER_N"].isin(hiers_norm)].copy()
+
+                    if not base_skus.empty:
+                        skus_pedido_norm = [_norm_txt(x) for x in skus_pedido]
+                        cand3 = [s for s in base_skus["SKU_NOME"].tolist() if _norm_txt(s) not in skus_pedido_norm]
+                        sugestoes = _top_list(cand3, n=5)
+                        if sugestoes:
+                            fonte_sug = "Aba SKUS (fallback por hierarquia)"
+
+                texto_skus_pedido = ", ".join(skus_pedido[:4]) if skus_pedido else "-"
+                texto_sug = ", ".join(sugestoes) if sugestoes else "-"
+                texto_hier = ", ".join(hiers_pedido) if hiers_pedido else "-"
+
+                semaforo = _semaforo_pedido(dias, status_op)
+                acao = _acao_sugerida(status_op)
+
+                insights_rows.append({
+                    "SEMAFORO": semaforo,
+                    "ACAO": acao,
+                    "CLIENTE_NOME": cliente_nome,
+                    "CLIENTE_COD": cliente_cod_n,
+                    "DOC_VENDA": doc,
+                    "DIAS_ABERTO": dias,
+                    "STATUS_PEDIDO": status_op,
+                    "SALDO_PEDIDO": qtd_nf,
+                    "HIERARQUIA": texto_hier,
+                    "SKUS_PEDIDO": texto_skus_pedido,
+                    "SUGESTAO_SKUS": texto_sug,
+                    "FONTE_SUGESTAO": fonte_sug,
+                })
 
             if insights_rows:
                 df_insights = pd.DataFrame(insights_rows).copy()
 
-                # ✅ garante colunas (caso alguma venha faltando)
-                colunas_esperadas = [
-                    "CLIENTE_NOME",
-                    "CLIENTE_COD",
-                    "DOC_VENDA",
-                    "DIAS_ABERTO",
-                    "STATUS_PEDIDO",
-                    "SALDO_PEDIDO",
-                    "HIERARQUIA",
-                    "SKUS_PEDIDO",
-                    "SUGESTAO_SKUS",
-                    "FONTE_SUGESTAO",
-                ]
-                for c in colunas_esperadas:
-                    if c not in df_insights.columns:
-                        df_insights[c] = ""
-
-                # ✅ renomeia para exibição
                 df_show = df_insights.rename(columns={
+                    "SEMAFORO": "Semáforo",
+                    "ACAO": "Ação sugerida",
                     "CLIENTE_NOME": "Cliente",
                     "CLIENTE_COD": "Cód. Cliente",
                     "DOC_VENDA": "Pedido",
@@ -5624,22 +5748,24 @@ elif menu == "💼 SALDO":
                     "FONTE_SUGESTAO": "Fonte sugestão",
                 }).copy()
 
-                # ✅ formatos
-                if "Saldo" in df_show.columns:
-                    df_show["Saldo"] = pd.to_numeric(df_show["Saldo"], errors="coerce").fillna(0).apply(
-                        lambda x: f"{x:,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
-                    )
+                df_show["Saldo"] = pd.to_numeric(df_show["Saldo"], errors="coerce").fillna(0)
+                df_show["Dias sem faturar"] = pd.to_numeric(df_show["Dias sem faturar"], errors="coerce").fillna(0).astype(int)
 
-                if "Dias sem faturar" in df_show.columns:
-                    df_show["Dias sem faturar"] = pd.to_numeric(df_show["Dias sem faturar"], errors="coerce").fillna(0).astype(int)
+                # ordem por criticidade
+                def _ord_sem(s):
+                    s = str(s)
+                    if "🔴" in s:
+                        return 0
+                    if "🟡" in s:
+                        return 1
+                    return 2
 
-                # ✅ ordenação (mais críticos primeiro)
+                df_show["_ord_sem"] = df_show["Semáforo"].apply(_ord_sem)
                 df_show = df_show.sort_values(
-                    by=["Dias sem faturar"],
-                    ascending=False
+                    by=["_ord_sem", "Dias sem faturar", "Saldo"],
+                    ascending=[True, False, False]
                 ).reset_index(drop=True)
 
-                # ✅ filtros rápidos (opcional e útil)
                 col_i1, col_i2 = st.columns([0.35, 0.65])
 
                 with col_i1:
@@ -5677,10 +5803,13 @@ elif menu == "💼 SALDO":
                     )
                     df_filtrado_ins = df_filtrado_ins[mask_busca].copy()
 
-                # ✅ tabela final
+                df_filtrado_ins["Saldo"] = df_filtrado_ins["Saldo"].apply(_fmt_int_pt)
+
                 st.dataframe(
                     df_filtrado_ins[
                         [
+                            "Semáforo",
+                            "Ação sugerida",
                             "Cliente",
                             "Cód. Cliente",
                             "Pedido",
@@ -5696,9 +5825,9 @@ elif menu == "💼 SALDO":
                     use_container_width=True,
                     hide_index=True
                 )
-
             else:
                 st.info("Nenhum insight comercial encontrado no filtro atual.")
+
         # ============================
         # 11) Cruzamento com FATURADO (visão por cliente / analista / estado)
         # ============================
@@ -5708,13 +5837,11 @@ elif menu == "💼 SALDO":
         if df_fat is None or df_fat.empty:
             st.info("Aba FATURADO não disponível agora para cruzamento.")
         else:
-            # monta base de faturado por cliente (últimos 180 dias, se houver data)
             fat_base = df_fat.copy()
             if "DATA_FAT" in fat_base.columns and fat_base["DATA_FAT"].notna().sum() > 0:
                 corte = hoje - pd.Timedelta(days=180)
                 fat_base = fat_base[fat_base["DATA_FAT"] >= corte].copy()
 
-            # agrega faturado por cliente
             agg_fat = {
                 "QTD_FAT_180D": ("QTD_FATURADA", "sum") if "QTD_FATURADA" in fat_base.columns else ("CLIENTE_NOME", "size"),
                 "RECEITA_180D": ("RECEITA", "sum") if "RECEITA" in fat_base.columns else ("CLIENTE_NOME", "size"),
@@ -5728,7 +5855,6 @@ elif menu == "💼 SALDO":
                 .copy()
             )
 
-            # agrega saldo por cliente
             g_sal_cli = (
                 df_f.groupby(["CLIENTE_COD_N", "CLIENTE_NOME", "ESTADO"], as_index=False)
                 .agg(
@@ -5757,14 +5883,21 @@ elif menu == "💼 SALDO":
 
             cruz_show = cruz.sort_values(["DIAS_MAX", "QTD_NAO_FAT"], ascending=[False, False]).head(30).copy()
             cruz_show["QTD_NAO_FAT"] = cruz_show["QTD_NAO_FAT"].apply(_fmt_int_pt)
+
             if "QTD_FAT_180D" in cruz_show.columns:
                 cruz_show["QTD_FAT_180D"] = cruz_show["QTD_FAT_180D"].fillna(0).apply(_fmt_int_pt)
             if "RECEITA_180D" in cruz_show.columns:
-                cruz_show["RECEITA_180D"] = cruz_show["RECEITA_180D"].fillna(0).apply(lambda x: _fmt_int_pt(x))
+                cruz_show["RECEITA_180D"] = cruz_show["RECEITA_180D"].fillna(0).apply(_fmt_int_pt)
+
             cruz_show["DIAS_MAX"] = cruz_show["DIAS_MAX"].apply(_fmt_int_pt)
-            cruz_show["ULT_FAT"] = cruz_show["ULT_FAT"].apply(_fmt_date_br) if "ULT_FAT" in cruz_show.columns else "-"
+
+            if "ULT_FAT" in cruz_show.columns:
+                cruz_show["ULT_FAT"] = cruz_show["ULT_FAT"].apply(_fmt_date_br)
+
             if "DIAS_SEM_FATURAR" in cruz_show.columns:
-                cruz_show["DIAS_SEM_FATURAR"] = cruz_show["DIAS_SEM_FATURAR"].fillna(-1).apply(lambda x: "-" if float(x) < 0 else _fmt_int_pt(x))
+                cruz_show["DIAS_SEM_FATURAR"] = cruz_show["DIAS_SEM_FATURAR"].fillna(-1).apply(
+                    lambda x: "-" if float(x) < 0 else _fmt_int_pt(x)
+                )
 
             cols_cruz = [
                 "CLIENTE_NOME", "CLIENTE_COD_N", "ESTADO", "ANALISTA", "PEDIDOS_ABERTOS",
@@ -5806,7 +5939,6 @@ elif menu == "💼 SALDO":
                 st.dataframe(dshow, use_container_width=True, hide_index=True)
         else:
             st.info("Sem pedidos para drill-down.")
-
 
 
 # --- PÁGINA: PERFIL DO CLIENTE (CURVA DE APRENDIZADO) ---

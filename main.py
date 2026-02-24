@@ -7060,10 +7060,10 @@ elif menu_interna == "📚 Perfil do Cliente":
         st.metric("Mix médio (SKUs/pedido)", f"{mix_medio:.1f}")
 
     with m6:
-        st.metric("Frequência esperada", freq_esperada_txt)
+        _card_menor("Frequência esperada", freq_esperada_txt)
 
     with m7:
-        st.metric("Próx. compra estimada", prox_compra_est_txt)
+        _card_menor("Próx. compra estimada", prox_compra_est_txt)
 
     with m8:
         _card_menor("Regularidade", risco_txt)

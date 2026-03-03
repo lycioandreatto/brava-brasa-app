@@ -4123,7 +4123,7 @@ elif menu == "🍊 LARANJA":
         receita_total = float(df_f["VAL_TOTAL_ITEM"].sum())
         caixas_total = float(df_f["CAIXAS_ESTIMADAS"].sum())
 
-                df_f["_DT_REF"] = df_f["DAT_HOR_EMISSAO"].dt.normalize()
+        df_f["_DT_REF"] = df_f["DAT_HOR_EMISSAO"].dt.normalize()
         df_f["_INI_SEM"] = df_f["_DT_REF"] - pd.to_timedelta(df_f["_DT_REF"].dt.weekday, unit="D")
 
         semanal = (

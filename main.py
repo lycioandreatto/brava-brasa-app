@@ -3919,7 +3919,7 @@ elif menu == "🍊 LARANJA":
             return "09 - AGROPECUÁRIA"
         return cod
 
-        def _detectar_embalagem(desc_item):
+    def _detectar_embalagem(desc_item):
         t = _norm_txt(desc_item)
 
         # granel / kg solto
@@ -3961,10 +3961,6 @@ elif menu == "🍊 LARANJA":
             return float(np.ceil(qtd / 4.0)) if qtd > 0 else 0.0
 
         return 0.0
-
-    def _week_key(ts_series):
-        iso = ts_series.dt.isocalendar()
-        return iso["year"].astype(str) + "-W" + iso["week"].astype(int).astype(str).str.zfill(2)
 
     # ============================
     # 1) Leitura da aba LARANJA
@@ -4024,7 +4020,11 @@ elif menu == "🍊 LARANJA":
         # ============================
         # 3) Limpeza de dados
         # ============================
-        for c in ["EMPRESA", "NOTA_FISCAL", "SERIE_NOTA_FISCAL", "CLIENTE_COD", "CLIENTE_NOME", "COD_ITEM", "DES_ITEM", "UM", "COD_REPRES", "ESTADO", "CIDADE", "COND_PAGTO", "NOM_TRANSPORTADORA", "TRANSPORTADORA"]:
+        for c in [
+            "EMPRESA", "NOTA_FISCAL", "SERIE_NOTA_FISCAL", "CLIENTE_COD", "CLIENTE_NOME",
+            "COD_ITEM", "DES_ITEM", "UM", "COD_REPRES", "ESTADO", "CIDADE",
+            "COND_PAGTO", "NOM_TRANSPORTADORA", "TRANSPORTADORA"
+        ]:
             if c in df_laranja.columns:
                 df_laranja[c] = df_laranja[c].astype(str).str.strip()
 
@@ -4051,16 +4051,18 @@ elif menu == "🍊 LARANJA":
 
         df_laranja["DATA"] = df_laranja["DAT_HOR_EMISSAO"].dt.date
         df_laranja["ANO_MES"] = df_laranja["DAT_HOR_EMISSAO"].dt.strftime("%Y-%m")
-        # semana em formato didático: início da semana até fim da semana
+
+        # semana em formato didático
         dt_ref = df_laranja["DAT_HOR_EMISSAO"].dt.normalize()
         ini_sem = dt_ref - pd.to_timedelta(dt_ref.dt.weekday, unit="D")
         fim_sem = ini_sem + pd.Timedelta(days=6)
 
         df_laranja["SEMANA"] = (
-        ini_sem.dt.strftime("%d/%m/%Y")
-        + " a "
-        + fim_sem.dt.strftime("%d/%m/%Y")
+            ini_sem.dt.strftime("%d/%m/%Y")
+            + " a "
+            + fim_sem.dt.strftime("%d/%m/%Y")
         )
+
         df_laranja["ANO"] = df_laranja["DAT_HOR_EMISSAO"].dt.year
 
         # ============================

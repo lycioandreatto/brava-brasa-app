@@ -3894,7 +3894,7 @@ elif menu == "🍊 LARANJA":
             return ""
 
         def _to_num(series):
-        if hasattr(series, "copy"):
+    if hasattr(series, "copy"):
             s = series.copy()
 
             # se já for numérico, só converte

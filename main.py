@@ -1245,6 +1245,7 @@ with st.sidebar:
     opcoes_menu.append("📚 Perfil do Cliente")
     opcoes_menu.append("💼 SALDO")
     opcoes_menu.append("👔 DIRETORIA")
+    opcoes_menu.append("🍊 LARANJA")
 
 
 
@@ -3849,6 +3850,652 @@ elif menu == "🗺️ INSIGHTS FATURADO":
                     out["SCORE_RISCO_0_100"] = out["SCORE_RISCO_0_100"].map(lambda x: f"{float(x):.1f}".replace(".", ","))
 
                     st.dataframe(out[cols_show], use_container_width=True, hide_index=True)
+
+
+
+
+# --- PÁGINA: LARANJA ---
+elif menu == "🍊 LARANJA":
+    import pandas as pd
+    import numpy as np
+    import streamlit as st
+    from datetime import datetime
+
+    st.header("🍊 LARANJA")
+
+    # ============================
+    # Helpers locais
+    # ============================
+    def _fmt_int_pt(v):
+        try:
+            return f"{float(v):,.0f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:
+            return str(v)
+
+    def _fmt_brl(v):
+        try:
+            return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:
+            return "R$ 0,00"
+
+    def _safe_str(x):
+        try:
+            s = str(x).strip()
+            if s.lower() in ["nan", "none"]:
+                return ""
+            return s
+        except Exception:
+            return ""
+
+    def _norm_txt(x):
+        try:
+            return str(x).strip().upper()
+        except Exception:
+            return ""
+
+    def _to_num(series):
+        if hasattr(series, "astype"):
+            s = series.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+            return pd.to_numeric(s, errors="coerce").fillna(0.0)
+        return pd.to_numeric(series, errors="coerce").fillna(0.0)
+
+    def _to_dt(series):
+        s1 = pd.to_datetime(series, errors="coerce", dayfirst=True)
+        if s1.notna().sum() == 0:
+            s1 = pd.to_datetime(series, errors="coerce")
+        return s1
+
+    def _first_existing(df, candidates):
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+
+    def _empresa_label(cod):
+        cod = _safe_str(cod)
+        if cod == "06":
+            return "06 - CITRICULTURA"
+        if cod == "09":
+            return "09 - AGROPECUÁRIA"
+        return cod
+
+    def _detectar_embalagem(desc_item):
+        t = _norm_txt(desc_item)
+
+        if ("GRANEL" in t) or (" A GRANEL" in t):
+            return "GRANEL"
+        if ("2,5" in t) or ("2.5" in t) or ("2 KG" in t and "1/2" in t):
+            return "SACO 2,5KG"
+        if ("3KG" in t) or ("3 KG" in t):
+            return "SACO 3KG"
+        if ("5KG" in t) or ("5 KG" in t) or ("5,0" in t) or ("5.0" in t):
+            return "SACO 5KG"
+
+        return "NÃO IDENTIFICADO"
+
+    def _calc_caixas(row):
+        emb = _safe_str(row.get("EMBALAGEM", ""))
+        qtd = float(row.get("QTD_ITEM", 0) or 0)
+        peso = float(row.get("PESO_ITEM", 0) or 0)
+
+        # usa CEIL porque fisicamente precisa arredondar pra cima
+        if emb == "GRANEL":
+            if peso > 0:
+                return float(np.ceil(peso / 20.0))
+            return 0.0
+
+        if emb == "SACO 2,5KG":
+            return float(np.ceil(qtd / 8.0)) if qtd > 0 else 0.0
+
+        if emb == "SACO 3KG":
+            return float(np.ceil(qtd / 6.0)) if qtd > 0 else 0.0
+
+        if emb == "SACO 5KG":
+            return float(np.ceil(qtd / 4.0)) if qtd > 0 else 0.0
+
+        return 0.0
+
+    def _week_key(ts_series):
+        iso = ts_series.dt.isocalendar()
+        return iso["year"].astype(str) + "-W" + iso["week"].astype(int).astype(str).str.zfill(2)
+
+    # ============================
+    # 1) Leitura da aba LARANJA
+    # ============================
+    try:
+        df_laranja_raw = conn.read(spreadsheet=url_planilha, worksheet="LARANJA")
+    except Exception as e:
+        st.error(f"Erro ao ler aba LARANJA: {e}")
+        df_laranja_raw = None
+
+    if df_laranja_raw is None or df_laranja_raw.empty:
+        st.warning("A aba LARANJA está vazia ou não carregou.")
+    else:
+        # ============================
+        # 2) Padronização
+        # ============================
+        df_laranja = df_laranja_raw.copy()
+        df_laranja.columns = [str(c).strip() for c in df_laranja.columns]
+
+        rename_map = {
+            "EMPRESA": "EMPRESA",
+            "NOTA_FISCAL": "NOTA_FISCAL",
+            "SERIE_NOTA_FISCAL": "SERIE_NOTA_FISCAL",
+            "DAT_HOR_EMISSAO": "DAT_HOR_EMISSAO",
+            "CLIENTE": "CLIENTE_COD",
+            "NOM_CLIENTE": "CLIENTE_NOME",
+            "COD_ITEM": "COD_ITEM",
+            "DES_ITEM": "DES_ITEM",
+            "UM": "UM",
+            "QTD_ITEM": "QTD_ITEM",
+            "PESO_ITEM": "PESO_ITEM",
+            "VAL_UNIT_ITEM": "VAL_UNIT_ITEM",
+            "VAL_TOTAL_ITEM": "VAL_TOTAL_ITEM",
+            "COD_REPRES": "COD_REPRES",
+            "COD_UNI_FEDER": "ESTADO",
+            "DEN_CIDADE": "CIDADE",
+            "DEN_CND_PGTO": "COND_PAGTO",
+            "FRETE": "FRETE",
+            "NOM_TRANSPORTADORA": "NOM_TRANSPORTADORA",
+            "TRANSPORTADORA": "TRANSPORTADORA",
+        }
+
+        for old, new in rename_map.items():
+            if old in df_laranja.columns and new not in df_laranja.columns:
+                df_laranja = df_laranja.rename(columns={old: new})
+
+        obrigatorias = [
+            "EMPRESA", "NOTA_FISCAL", "DAT_HOR_EMISSAO", "CLIENTE_COD", "CLIENTE_NOME",
+            "COD_ITEM", "DES_ITEM", "UM", "QTD_ITEM", "PESO_ITEM", "VAL_TOTAL_ITEM",
+            "COD_REPRES", "ESTADO", "CIDADE"
+        ]
+        faltando = [c for c in obrigatorias if c not in df_laranja.columns]
+        if faltando:
+            st.error(f"Faltam colunas obrigatórias na aba LARANJA: {faltando}")
+            st.stop()
+
+        # ============================
+        # 3) Limpeza de dados
+        # ============================
+        for c in ["EMPRESA", "NOTA_FISCAL", "SERIE_NOTA_FISCAL", "CLIENTE_COD", "CLIENTE_NOME", "COD_ITEM", "DES_ITEM", "UM", "COD_REPRES", "ESTADO", "CIDADE", "COND_PAGTO", "NOM_TRANSPORTADORA", "TRANSPORTADORA"]:
+            if c in df_laranja.columns:
+                df_laranja[c] = df_laranja[c].astype(str).str.strip()
+
+        # limpa espaços aleatórios do nome do cliente
+        df_laranja["CLIENTE_NOME"] = (
+            df_laranja["CLIENTE_NOME"]
+            .astype(str)
+            .str.strip()
+            .str.replace(r"\s+", " ", regex=True)
+        )
+
+        df_laranja["DAT_HOR_EMISSAO"] = _to_dt(df_laranja["DAT_HOR_EMISSAO"])
+        df_laranja = df_laranja[df_laranja["DAT_HOR_EMISSAO"].notna()].copy()
+
+        for c in ["QTD_ITEM", "PESO_ITEM", "VAL_UNIT_ITEM", "VAL_TOTAL_ITEM", "FRETE"]:
+            if c in df_laranja.columns:
+                df_laranja[c] = _to_num(df_laranja[c])
+
+        df_laranja["EMPRESA"] = df_laranja["EMPRESA"].astype(str).str.strip().str.zfill(2)
+        df_laranja["EMPRESA_LABEL"] = df_laranja["EMPRESA"].apply(_empresa_label)
+
+        df_laranja["EMBALAGEM"] = df_laranja["DES_ITEM"].apply(_detectar_embalagem)
+        df_laranja["CAIXAS_ESTIMADAS"] = df_laranja.apply(_calc_caixas, axis=1)
+
+        df_laranja["DATA"] = df_laranja["DAT_HOR_EMISSAO"].dt.date
+        df_laranja["ANO_MES"] = df_laranja["DAT_HOR_EMISSAO"].dt.strftime("%Y-%m")
+        df_laranja["SEMANA"] = _week_key(df_laranja["DAT_HOR_EMISSAO"])
+        df_laranja["ANO"] = df_laranja["DAT_HOR_EMISSAO"].dt.year
+
+        # ============================
+        # 4) Filtros
+        # ============================
+        st.markdown("---")
+        st.subheader("🎛️ Filtros")
+
+        f1, f2, f3, f4, f5 = st.columns(5)
+
+        dt_min = df_laranja["DAT_HOR_EMISSAO"].min()
+        dt_max = df_laranja["DAT_HOR_EMISSAO"].max()
+
+        with f1:
+            dt_ini = st.date_input(
+                "Data inicial",
+                value=dt_min.date() if pd.notna(dt_min) else datetime.now().date(),
+                key="laranja_dt_ini"
+            )
+
+        with f2:
+            dt_fim = st.date_input(
+                "Data final",
+                value=dt_max.date() if pd.notna(dt_max) else datetime.now().date(),
+                key="laranja_dt_fim"
+            )
+
+        df_f = df_laranja[
+            (df_laranja["DAT_HOR_EMISSAO"].dt.date >= dt_ini)
+            & (df_laranja["DAT_HOR_EMISSAO"].dt.date <= dt_fim)
+        ].copy()
+
+        with f3:
+            empresas = ["(Todas)"] + sorted(df_f["EMPRESA_LABEL"].dropna().unique().tolist())
+            sel_empresa = st.selectbox("Empresa / Beneficiadora", empresas, key="laranja_empresa")
+
+        with f4:
+            estados = ["(Todos)"] + sorted([x for x in df_f["ESTADO"].dropna().unique().tolist() if str(x).strip() != ""])
+            sel_estado = st.selectbox("Estado", estados, key="laranja_estado")
+
+        with f5:
+            reps = ["(Todos)"] + sorted([x for x in df_f["COD_REPRES"].dropna().unique().tolist() if str(x).strip() != ""])
+            sel_rep = st.selectbox("Representante", reps, key="laranja_rep")
+
+        if sel_empresa != "(Todas)":
+            df_f = df_f[df_f["EMPRESA_LABEL"] == sel_empresa].copy()
+
+        if sel_estado != "(Todos)":
+            df_f = df_f[df_f["ESTADO"] == sel_estado].copy()
+
+        if sel_rep != "(Todos)":
+            df_f = df_f[df_f["COD_REPRES"] == sel_rep].copy()
+
+        if df_f.empty:
+            st.info("Sem dados para os filtros selecionados.")
+            st.stop()
+
+        # ============================
+        # 5) KPIs principais
+        # ============================
+        st.markdown("---")
+        st.subheader("📌 Resumo Executivo")
+
+        notas = df_f["NOTA_FISCAL"].nunique()
+        clientes = df_f["CLIENTE_COD"].nunique()
+        peso_total = float(df_f["PESO_ITEM"].sum())
+        receita_total = float(df_f["VAL_TOTAL_ITEM"].sum())
+        caixas_total = float(df_f["CAIXAS_ESTIMADAS"].sum())
+
+        semanal = (
+            df_f.groupby("SEMANA", as_index=False)
+            .agg(
+                PESO=("PESO_ITEM", "sum"),
+                RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                CLIENTES=("CLIENTE_COD", "nunique"),
+            )
+            .sort_values("SEMANA")
+        )
+
+        media_semanal_caixas = float(semanal["CAIXAS"].mean()) if not semanal.empty else 0.0
+        pico_semanal_caixas = float(semanal["CAIXAS"].max()) if not semanal.empty else 0.0
+
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+        k1.metric("Notas fiscais", _fmt_int_pt(notas))
+        k2.metric("Clientes", _fmt_int_pt(clientes))
+        k3.metric("Peso total (kg)", _fmt_int_pt(peso_total))
+        k4.metric("Receita total", _fmt_brl(receita_total))
+        k5.metric("Caixas estimadas", _fmt_int_pt(caixas_total))
+        k6.metric("Média semanal de caixas", _fmt_int_pt(media_semanal_caixas))
+
+        st.caption(f"Pico semanal estimado de caixas: **{_fmt_int_pt(pico_semanal_caixas)}**")
+
+        # ============================
+        # 6) Controle de caixas
+        # ============================
+        st.markdown("---")
+        st.subheader("📦 Controle de Caixas")
+
+        c_box1, c_box2, c_box3 = st.columns(3)
+
+        with c_box1:
+            total_caixas_disponiveis = st.number_input(
+                "Total de caixas disponíveis",
+                min_value=0,
+                value=14000,
+                step=100,
+                key="laranja_total_caixas"
+            )
+
+        with c_box2:
+            caixas_ja_comprometidas = st.number_input(
+                "Caixas já comprometidas / em uso",
+                min_value=0,
+                value=0,
+                step=100,
+                key="laranja_comprometidas"
+            )
+
+        with c_box3:
+            perc_seguranca = st.number_input(
+                "Estoque de segurança (%)",
+                min_value=0,
+                value=10,
+                step=1,
+                key="laranja_estoque_seg"
+            )
+
+        caixas_livres = max(0, float(total_caixas_disponiveis) - float(caixas_ja_comprometidas))
+        estoque_seguranca = float(total_caixas_disponiveis) * (float(perc_seguranca) / 100.0)
+        caixas_uteis = max(0, caixas_livres - estoque_seguranca)
+        cobertura_semanas = (caixas_uteis / media_semanal_caixas) if media_semanal_caixas > 0 else 0.0
+        risco_txt = "🟢 Confortável"
+
+        if cobertura_semanas < 1:
+            risco_txt = "🔴 Crítico"
+        elif cobertura_semanas < 2:
+            risco_txt = "🟡 Atenção"
+
+        bx1, bx2, bx3, bx4 = st.columns(4)
+        bx1.metric("Caixas livres", _fmt_int_pt(caixas_livres))
+        bx2.metric("Estoque de segurança", _fmt_int_pt(estoque_seguranca))
+        bx3.metric("Caixas úteis p/ giro", _fmt_int_pt(caixas_uteis))
+        bx4.metric("Cobertura estimada", f"{cobertura_semanas:.1f} sem.".replace(".", ","))
+
+        st.caption(f"Status do estoque de caixas: **{risco_txt}**")
+
+        # Distribuição sugerida entre beneficiadoras
+        dist_emp = (
+            df_f.groupby("EMPRESA_LABEL", as_index=False)
+            .agg(CAIXAS=("CAIXAS_ESTIMADAS", "sum"))
+            .sort_values("CAIXAS", ascending=False)
+        )
+
+        if not dist_emp.empty:
+            total_emp = float(dist_emp["CAIXAS"].sum())
+            dist_emp["%_DEMANDA"] = np.where(total_emp > 0, dist_emp["CAIXAS"] / total_emp, 0.0)
+            dist_emp["CAIXAS_SUGERIDAS"] = np.round(dist_emp["%_DEMANDA"] * caixas_uteis, 0)
+
+            dist_emp_show = dist_emp.copy()
+            dist_emp_show["CAIXAS"] = dist_emp_show["CAIXAS"].apply(_fmt_int_pt)
+            dist_emp_show["%_DEMANDA"] = dist_emp_show["%_DEMANDA"].apply(lambda x: f"{(float(x) * 100):.1f}%".replace(".", ","))
+            dist_emp_show["CAIXAS_SUGERIDAS"] = dist_emp_show["CAIXAS_SUGERIDAS"].apply(_fmt_int_pt)
+
+            st.markdown("#### Sugestão de distribuição de caixas por beneficiadora")
+            st.dataframe(
+                dist_emp_show.rename(columns={
+                    "EMPRESA_LABEL": "Beneficiadora",
+                    "CAIXAS": "Caixas demandadas",
+                    "%_DEMANDA": "% da demanda",
+                    "CAIXAS_SUGERIDAS": "Caixas sugeridas no estoque livre",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        # ============================
+        # 7) Demanda por semana
+        # ============================
+        st.markdown("---")
+        st.subheader("📅 Demanda de caixas por semana")
+
+        sem_show = semanal.copy()
+        sem_show["PESO"] = sem_show["PESO"].apply(_fmt_int_pt)
+        sem_show["RECEITA"] = sem_show["RECEITA"].apply(_fmt_brl)
+        sem_show["CAIXAS"] = sem_show["CAIXAS"].apply(_fmt_int_pt)
+        sem_show["CLIENTES"] = sem_show["CLIENTES"].apply(_fmt_int_pt)
+
+        st.dataframe(
+            sem_show.rename(columns={
+                "SEMANA": "Semana",
+                "PESO": "Peso (kg)",
+                "RECEITA": "Receita",
+                "CAIXAS": "Caixas estimadas",
+                "CLIENTES": "Clientes",
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # ============================
+        # 8) Demanda por cliente
+        # ============================
+        st.markdown("---")
+        st.subheader("👤 Demanda de caixas por cliente")
+
+        cli = (
+            df_f.groupby(["CLIENTE_COD", "CLIENTE_NOME"], as_index=False)
+            .agg(
+                NOTAS=("NOTA_FISCAL", "nunique"),
+                PESO=("PESO_ITEM", "sum"),
+                RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                SEMANAS=("SEMANA", "nunique"),
+            )
+            .sort_values("CAIXAS", ascending=False)
+        )
+
+        cli["MEDIA_SEMANAL_CAIXAS"] = np.where(cli["SEMANAS"] > 0, cli["CAIXAS"] / cli["SEMANAS"], 0.0)
+
+        cli_show = cli.head(30).copy()
+        cli_show["PESO"] = cli_show["PESO"].apply(_fmt_int_pt)
+        cli_show["RECEITA"] = cli_show["RECEITA"].apply(_fmt_brl)
+        cli_show["CAIXAS"] = cli_show["CAIXAS"].apply(_fmt_int_pt)
+        cli_show["MEDIA_SEMANAL_CAIXAS"] = cli_show["MEDIA_SEMANAL_CAIXAS"].apply(lambda x: _fmt_int_pt(x))
+        cli_show["NOTAS"] = cli_show["NOTAS"].apply(_fmt_int_pt)
+        cli_show["SEMANAS"] = cli_show["SEMANAS"].apply(_fmt_int_pt)
+
+        st.dataframe(
+            cli_show.rename(columns={
+                "CLIENTE_COD": "Cód. Cliente",
+                "CLIENTE_NOME": "Cliente",
+                "NOTAS": "Notas",
+                "PESO": "Peso (kg)",
+                "RECEITA": "Receita",
+                "CAIXAS": "Caixas estimadas",
+                "SEMANAS": "Semanas comprando",
+                "MEDIA_SEMANAL_CAIXAS": "Média semanal de caixas",
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # ============================
+        # 9) Demanda por beneficiadora
+        # ============================
+        st.markdown("---")
+        st.subheader("🏭 Demanda por beneficiadora")
+
+        emp = (
+            df_f.groupby("EMPRESA_LABEL", as_index=False)
+            .agg(
+                NOTAS=("NOTA_FISCAL", "nunique"),
+                CLIENTES=("CLIENTE_COD", "nunique"),
+                PESO=("PESO_ITEM", "sum"),
+                RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+            )
+            .sort_values("CAIXAS", ascending=False)
+        )
+
+        emp_show = emp.copy()
+        emp_show["NOTAS"] = emp_show["NOTAS"].apply(_fmt_int_pt)
+        emp_show["CLIENTES"] = emp_show["CLIENTES"].apply(_fmt_int_pt)
+        emp_show["PESO"] = emp_show["PESO"].apply(_fmt_int_pt)
+        emp_show["RECEITA"] = emp_show["RECEITA"].apply(_fmt_brl)
+        emp_show["CAIXAS"] = emp_show["CAIXAS"].apply(_fmt_int_pt)
+
+        st.dataframe(
+            emp_show.rename(columns={
+                "EMPRESA_LABEL": "Beneficiadora",
+                "NOTAS": "Notas",
+                "CLIENTES": "Clientes",
+                "PESO": "Peso (kg)",
+                "RECEITA": "Receita",
+                "CAIXAS": "Caixas estimadas",
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # ============================
+        # 10) Caixas por semana e por cliente
+        # ============================
+        st.markdown("---")
+        st.subheader("📊 Caixas por semana e por cliente")
+
+        top_clientes = cli.head(15)[["CLIENTE_COD", "CLIENTE_NOME"]].copy()
+        base_sem_cli = df_f.merge(top_clientes, on=["CLIENTE_COD", "CLIENTE_NOME"], how="inner")
+
+        sem_cli = (
+            base_sem_cli.groupby(["SEMANA", "CLIENTE_COD", "CLIENTE_NOME"], as_index=False)
+            .agg(
+                CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                PESO=("PESO_ITEM", "sum"),
+                RECEITA=("VAL_TOTAL_ITEM", "sum"),
+            )
+            .sort_values(["SEMANA", "CAIXAS"], ascending=[True, False])
+        )
+
+        sem_cli_show = sem_cli.copy()
+        sem_cli_show["CAIXAS"] = sem_cli_show["CAIXAS"].apply(_fmt_int_pt)
+        sem_cli_show["PESO"] = sem_cli_show["PESO"].apply(_fmt_int_pt)
+        sem_cli_show["RECEITA"] = sem_cli_show["RECEITA"].apply(_fmt_brl)
+
+        st.dataframe(
+            sem_cli_show.rename(columns={
+                "SEMANA": "Semana",
+                "CLIENTE_COD": "Cód. Cliente",
+                "CLIENTE_NOME": "Cliente",
+                "CAIXAS": "Caixas estimadas",
+                "PESO": "Peso (kg)",
+                "RECEITA": "Receita",
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # ============================
+        # 11) Volume / faturamento por estado e cidade
+        # ============================
+        st.markdown("---")
+        geo1, geo2 = st.columns(2)
+
+        with geo1:
+            st.markdown("### 🌎 Faturamento por estado")
+            uf = (
+                df_f.groupby("ESTADO", as_index=False)
+                .agg(
+                    PESO=("PESO_ITEM", "sum"),
+                    RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                    CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                    CLIENTES=("CLIENTE_COD", "nunique"),
+                )
+                .sort_values("RECEITA", ascending=False)
+            )
+            uf_show = uf.copy()
+            uf_show["PESO"] = uf_show["PESO"].apply(_fmt_int_pt)
+            uf_show["RECEITA"] = uf_show["RECEITA"].apply(_fmt_brl)
+            uf_show["CAIXAS"] = uf_show["CAIXAS"].apply(_fmt_int_pt)
+            uf_show["CLIENTES"] = uf_show["CLIENTES"].apply(_fmt_int_pt)
+            st.dataframe(
+                uf_show.rename(columns={
+                    "ESTADO": "Estado",
+                    "PESO": "Peso (kg)",
+                    "RECEITA": "Receita",
+                    "CAIXAS": "Caixas estimadas",
+                    "CLIENTES": "Clientes",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with geo2:
+            st.markdown("### 🏙️ Faturamento por cidade")
+            cid = (
+                df_f.groupby(["ESTADO", "CIDADE"], as_index=False)
+                .agg(
+                    PESO=("PESO_ITEM", "sum"),
+                    RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                    CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                    CLIENTES=("CLIENTE_COD", "nunique"),
+                )
+                .sort_values("RECEITA", ascending=False)
+                .head(30)
+            )
+            cid_show = cid.copy()
+            cid_show["PESO"] = cid_show["PESO"].apply(_fmt_int_pt)
+            cid_show["RECEITA"] = cid_show["RECEITA"].apply(_fmt_brl)
+            cid_show["CAIXAS"] = cid_show["CAIXAS"].apply(_fmt_int_pt)
+            cid_show["CLIENTES"] = cid_show["CLIENTES"].apply(_fmt_int_pt)
+            st.dataframe(
+                cid_show.rename(columns={
+                    "ESTADO": "Estado",
+                    "CIDADE": "Cidade",
+                    "PESO": "Peso (kg)",
+                    "RECEITA": "Receita",
+                    "CAIXAS": "Caixas estimadas",
+                    "CLIENTES": "Clientes",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        # ============================
+        # 12) Representantes e itens
+        # ============================
+        st.markdown("---")
+        rep1, rep2 = st.columns(2)
+
+        with rep1:
+            st.markdown("### 👤 Desempenho por representante")
+            rep = (
+                df_f.groupby("COD_REPRES", as_index=False)
+                .agg(
+                    CLIENTES=("CLIENTE_COD", "nunique"),
+                    PESO=("PESO_ITEM", "sum"),
+                    RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                    CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                    NOTAS=("NOTA_FISCAL", "nunique"),
+                )
+                .sort_values("RECEITA", ascending=False)
+            )
+            rep_show = rep.copy()
+            rep_show["CLIENTES"] = rep_show["CLIENTES"].apply(_fmt_int_pt)
+            rep_show["PESO"] = rep_show["PESO"].apply(_fmt_int_pt)
+            rep_show["RECEITA"] = rep_show["RECEITA"].apply(_fmt_brl)
+            rep_show["CAIXAS"] = rep_show["CAIXAS"].apply(_fmt_int_pt)
+            rep_show["NOTAS"] = rep_show["NOTAS"].apply(_fmt_int_pt)
+            st.dataframe(
+                rep_show.rename(columns={
+                    "COD_REPRES": "Representante",
+                    "CLIENTES": "Clientes",
+                    "PESO": "Peso (kg)",
+                    "RECEITA": "Receita",
+                    "CAIXAS": "Caixas estimadas",
+                    "NOTAS": "Notas",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        with rep2:
+            st.markdown("### 📦 Itens / embalagens")
+            item = (
+                df_f.groupby(["DES_ITEM", "EMBALAGEM"], as_index=False)
+                .agg(
+                    QTD=("QTD_ITEM", "sum"),
+                    PESO=("PESO_ITEM", "sum"),
+                    RECEITA=("VAL_TOTAL_ITEM", "sum"),
+                    CAIXAS=("CAIXAS_ESTIMADAS", "sum"),
+                )
+                .sort_values("CAIXAS", ascending=False)
+            )
+            item_show = item.copy()
+            item_show["QTD"] = item_show["QTD"].apply(_fmt_int_pt)
+            item_show["PESO"] = item_show["PESO"].apply(_fmt_int_pt)
+            item_show["RECEITA"] = item_show["RECEITA"].apply(_fmt_brl)
+            item_show["CAIXAS"] = item_show["CAIXAS"].apply(_fmt_int_pt)
+            st.dataframe(
+                item_show.rename(columns={
+                    "DES_ITEM": "Item",
+                    "EMBALAGEM": "Embalagem detectada",
+                    "QTD": "Qtd",
+                    "PESO": "Peso (kg)",
+                    "RECEITA": "Receita",
+                    "CAIXAS": "Caixas estimadas",
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
 
 
 

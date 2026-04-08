@@ -180,10 +180,11 @@ if st.session_state.pagina == "pedido" and st.session_state.mesa_atual:
         with col1:
             if st.button("🟢 Abrir Pedido"):
                 st.session_state.mesas[mesa]["iniciado"] = True
-                st.experimental_rerun()  # força renderizar itens
+                st.experimental_rerun()  # ✅ Rerun dentro do botão
         with col2:
             if st.button("⬅️ Voltar"):
                 st.session_state.pagina = "Mesas / Pedidos"
+                st.experimental_rerun()
     else:
         if pedido["fechado"]:
             st.error("🔒 Pedido FECHADO")
@@ -197,7 +198,7 @@ if st.session_state.pagina == "pedido" and st.session_state.mesa_atual:
             with cols[i%3]:
                 if st.button(item, key=f"{item}_{mesa}") and not pedido["fechado"]:
                     st.session_state.mesas[mesa]["itens"][item] += 1
-                    st.experimental_rerun()  # atualiza contagem imediatamente
+                    st.experimental_rerun()  # ✅ Rerun dentro do botão do item
 
         st.divider()
         total = sum(qtd*precos[item] for item,qtd in pedido["itens"].items() if qtd>0)
@@ -210,7 +211,7 @@ if st.session_state.pagina == "pedido" and st.session_state.mesa_atual:
                 with col3:
                     if st.button("➖",key=f"menos_{item}_{mesa}") and not pedido["fechado"]:
                         st.session_state.mesas[mesa]["itens"][item] -= 1
-                        st.experimental_rerun()
+                        st.experimental_rerun()  # ✅ Rerun dentro do botão
 
         st.markdown(f"<div class='total'>Total: R$ {total}</div>",unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)

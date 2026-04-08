@@ -17,6 +17,15 @@ db = firestore.client()
 def salvar_pedido(pedido):
     db.collection("pedidos").add(pedido)
 
+def carregar_pedidos_firebase():
+    """Carrega todos os pedidos do Firebase"""
+    pedidos_ref = db.collection("pedidos")
+    docs = pedidos_ref.stream()
+    historico = []
+    for doc in docs:
+        historico.append(doc.to_dict())
+    return historico
+
 # ===== CONFIGURAÇÃO STREAMLIT =====
 st.set_page_config(page_title="Brava Brasa", page_icon="🔥", layout="wide")
 
@@ -34,14 +43,15 @@ button{background:#ff6600 !important;color:white !important;border-radius:8px !i
 
 st.markdown('<div class="title">🔥 BRAVA BRASA</div>', unsafe_allow_html=True)
 
-# ===== ARQUIVO =====
+# ===== ARQUIVO LOCAL =====
 ARQUIVO = "historico.json"
-def carregar():
+def carregar_json_local():
     if os.path.exists(ARQUIVO):
         with open(ARQUIVO, "r") as f:
             return json.load(f)
     return []
-def salvar(dados):
+
+def salvar_json_local(dados):
     with open(ARQUIVO, "w") as f:
         json.dump(dados, f)
 
@@ -55,12 +65,20 @@ if "pagina" not in st.session_state:
 if "mesa_atual" not in st.session_state:
     st.session_state.mesa_atual = None
 if "historico" not in st.session_state:
-    st.session_state.historico = carregar()
+    # Primeiro carrega do JSON local
+    historico = carregar_json_local()
+    # Depois carrega do Firebase
+    pedidos_firebase = carregar_pedidos_firebase()
+    for p in pedidos_firebase:
+        if p not in historico:
+            historico.append(p)
+    st.session_state.historico = historico
 if "pedido_detalhe" not in st.session_state:
     st.session_state.pedido_detalhe = None
 
 # ===== PREÇOS =====
 precos = {"CARNE":8,"FRANGO":7,"CALABRESA":7,"CORAÇÃO":8,"QUEIJO":6,"MISTO":9,"COCA":6,"GUARANA":6,"HEINEKEN":10}
+
 def nova_mesa():
     return {"itens": {i:0 for i in precos}, "fechado": False, "iniciado": False}  # "iniciado" = pedido iniciado
 
@@ -147,7 +165,7 @@ elif st.session_state.pagina == "pedido":
             if not pedido["fechado"]:
                 if st.button("🔒 Fechar", key=f"fechar_{mesa}"):
                     st.session_state.mesas[mesa]["fechado"] = True
-            else:
+            elif pedido["fechado"]:
                 if st.button("🔓 Reabrir", key=f"reabrir_{mesa}"):
                     st.session_state.mesas[mesa]["fechado"] = False
         with col2:
@@ -159,7 +177,11 @@ elif st.session_state.pagina == "pedido":
                     "data": datetime.now().strftime("%Y-%m-%d"),
                     "hora": datetime.now().strftime("%H:%M")
                 }
+                # salva no histórico do Streamlit
                 st.session_state.historico.append(novo)
+                # salva no JSON local
+                salvar_json_local(st.session_state.historico)
+                # salva no Firebase
                 salvar_pedido(novo)
                 st.success("✅ Pedido salvo no Firebase!")
                 st.json(novo)
@@ -175,6 +197,7 @@ elif st.session_state.pagina == "pedido":
 elif st.session_state.pagina == "relatorio":
     st.title("📊 Relatório")
     if st.button("⬅️ Voltar"): st.session_state.pagina = "mesas"
+
     hoje = datetime.now().strftime("%Y-%m-%d")
     pedidos = [p for p in st.session_state.historico if p["data"] == hoje]
     total = sum(p["total"] for p in pedidos)

@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 import os
 import pandas as pd
+import pytz  # para timezone
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -43,6 +44,9 @@ button{background:#ff6600 !important;color:white !important;border-radius:8px !i
 
 st.markdown('<div class="title">🔥 BRAVA BRASA</div>', unsafe_allow_html=True)
 
+# ===== TIMEZONE BRASIL =====
+BRASIL = pytz.timezone("America/Sao_Paulo")
+
 # ===== ARQUIVO LOCAL =====
 ARQUIVO = "historico.json"
 def carregar_json_local():
@@ -59,15 +63,13 @@ def salvar_json_local(dados):
 if "mesas" not in st.session_state:
     st.session_state.mesas = {}
 if "mesa_aberta" not in st.session_state:
-    st.session_state.mesa_aberta = {}  # flag para pedido iniciado
+    st.session_state.mesa_aberta = {}
 if "pagina" not in st.session_state:
     st.session_state.pagina = "mesas"
 if "mesa_atual" not in st.session_state:
     st.session_state.mesa_atual = None
 if "historico" not in st.session_state:
-    # Primeiro carrega do JSON local
     historico = carregar_json_local()
-    # Depois carrega do Firebase
     pedidos_firebase = carregar_pedidos_firebase()
     for p in pedidos_firebase:
         if p not in historico:
@@ -80,7 +82,7 @@ if "pedido_detalhe" not in st.session_state:
 precos = {"CARNE":8,"FRANGO":7,"CALABRESA":7,"CORAÇÃO":8,"QUEIJO":6,"MISTO":9,"COCA":6,"GUARANA":6,"HEINEKEN":10}
 
 def nova_mesa():
-    return {"itens": {i:0 for i in precos}, "fechado": False, "iniciado": False}  # "iniciado" = pedido iniciado
+    return {"itens": {i:0 for i in precos}, "fechado": False, "iniciado": False}
 
 # =========================
 # BOTÃO RELATÓRIO
@@ -102,7 +104,6 @@ if st.session_state.pagina == "mesas":
         for j in range(2):
             if i+j < len(mesas):
                 mesa = mesas[i+j]
-                # Status baseado em pedido iniciado
                 status = "🔴 Ocupada" if st.session_state.mesas.get(mesa, {}).get("iniciado", False) else "🟢 Livre"
                 with cols[j]:
                     st.markdown(f'<div class="card"><h2>{mesa}</h2><p>{status}</p></div>', unsafe_allow_html=True)
@@ -121,7 +122,6 @@ elif st.session_state.pagina == "pedido":
 
     st.subheader(f"📋 {mesa}")
 
-    # Pedido não iniciado
     if not pedido["iniciado"]:
         st.info("📌 Pedido não iniciado")
         col1, col2 = st.columns(2)
@@ -133,7 +133,6 @@ elif st.session_state.pagina == "pedido":
             if st.button("⬅️ Voltar"):
                 st.session_state.pagina = "mesas"
     else:
-        # Pedido iniciado
         if pedido["fechado"]:
             st.error("🔒 Pedido FECHADO")
         else:
@@ -170,18 +169,16 @@ elif st.session_state.pagina == "pedido":
                     st.session_state.mesas[mesa]["fechado"] = False
         with col2:
             if st.button("❌ Encerrar", key=f"encerrar_{mesa}"):
+                agora = datetime.now(BRASIL)
                 novo = {
                     "mesa": mesa,
                     "itens": pedido["itens"],
                     "total": total,
-                    "data": datetime.now().strftime("%Y-%m-%d"),
-                    "hora": datetime.now().strftime("%H:%M")
+                    "data": agora.strftime("%Y-%m-%d"),
+                    "hora": agora.strftime("%H:%M")
                 }
-                # salva no histórico do Streamlit
                 st.session_state.historico.append(novo)
-                # salva no JSON local
                 salvar_json_local(st.session_state.historico)
-                # salva no Firebase
                 salvar_pedido(novo)
                 st.success("✅ Pedido salvo no Firebase!")
                 st.json(novo)
@@ -198,7 +195,7 @@ elif st.session_state.pagina == "relatorio":
     st.title("📊 Relatório")
     if st.button("⬅️ Voltar"): st.session_state.pagina = "mesas"
 
-    hoje = datetime.now().strftime("%Y-%m-%d")
+    hoje = datetime.now(BRASIL).strftime("%Y-%m-%d")
     pedidos = [p for p in st.session_state.historico if p["data"] == hoje]
     total = sum(p["total"] for p in pedidos)
     st.subheader(f"💰 Total do dia: R$ {total}")

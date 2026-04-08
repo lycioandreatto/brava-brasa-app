@@ -99,34 +99,40 @@ if "pedido_detalhe" not in st.session_state:
 # =========================
 menu = st.sidebar.selectbox("Menu", ["Mesas / Pedidos", "Ajustar Preços", "Relatório"])
 
+# Sincroniza o menu com a página
+if menu == "Mesas / Pedidos":
+    st.session_state.pagina = "mesas"
+elif menu == "Ajustar Preços":
+    st.session_state.pagina = "ajustar_precos"
+elif menu == "Relatório":
+    st.session_state.pagina = "relatorio"
+
 # =========================
 # MESAS / PEDIDOS
 # =========================
-if menu == "Mesas / Pedidos":
-    # Só renderiza lista de mesas se não estivermos numa mesa aberta
-    if st.session_state.pagina == "mesas":
-        st.subheader("🪑 Mesas")
-        st.markdown(f'<div class="counter">Pedidos salvos hoje: {len(st.session_state.historico)}</div>', unsafe_allow_html=True)
+if st.session_state.pagina == "mesas":
+    st.subheader("🪑 Mesas")
+    st.markdown(f'<div class="counter">Pedidos salvos hoje: {len(st.session_state.historico)}</div>', unsafe_allow_html=True)
 
-        mesas = ["Mesa 1","Mesa 2","Mesa 3","Mesa 4"]
-        for i in range(0, len(mesas), 2):
-            cols = st.columns(2)
-            for j in range(2):
-                if i+j < len(mesas):
-                    mesa = mesas[i+j]
-                    status = "🔴 Ocupada" if st.session_state.mesas.get(mesa, {}).get("iniciado", False) else "🟢 Livre"
-                    with cols[j]:
-                        st.markdown(f'<div class="card"><h2>{mesa}</h2><p>{status}</p></div>', unsafe_allow_html=True)
-                        if st.button(f"Acessar {mesa}", key=f"acessar_{mesa}"):
-                            if mesa not in st.session_state.mesas:
-                                st.session_state.mesas[mesa] = nova_mesa()
-                            st.session_state.mesa_atual = mesa
-                            st.session_state.pagina = "pedido"
+    mesas = ["Mesa 1","Mesa 2","Mesa 3","Mesa 4"]
+    for i in range(0, len(mesas), 2):
+        cols = st.columns(2)
+        for j in range(2):
+            if i+j < len(mesas):
+                mesa = mesas[i+j]
+                status = "🔴 Ocupada" if st.session_state.mesas.get(mesa, {}).get("iniciado", False) else "🟢 Livre"
+                with cols[j]:
+                    st.markdown(f'<div class="card"><h2>{mesa}</h2><p>{status}</p></div>', unsafe_allow_html=True)
+                    if st.button(f"Acessar {mesa}", key=f"acessar_{mesa}"):
+                        if mesa not in st.session_state.mesas:
+                            st.session_state.mesas[mesa] = nova_mesa()
+                        st.session_state.mesa_atual = mesa
+                        st.session_state.pagina = "pedido"
 
 # =========================
 # AJUSTAR PREÇOS
 # =========================
-elif menu == "Ajustar Preços":
+elif st.session_state.pagina == "ajustar_precos":
     st.subheader("⚙️ Ajustar Preços")
     for item in precos:
         novo_valor = st.number_input(f"{item}", min_value=0, value=precos[item], step=1)
@@ -138,7 +144,7 @@ elif menu == "Ajustar Preços":
 # =========================
 # RELATÓRIO
 # =========================
-elif menu == "Relatório":
+elif st.session_state.pagina == "relatorio":
     st.subheader("📊 Relatório")
     st.session_state.historico = [doc.to_dict() for doc in db.collection("pedidos").stream()]
 
@@ -158,19 +164,19 @@ elif menu == "Relatório":
 # =========================
 # DETALHE
 # =========================
-if st.session_state.get("pagina") == "detalhe" and st.session_state.get("pedido_detalhe"):
+if st.session_state.pagina == "detalhe" and st.session_state.pedido_detalhe:
     pedido = st.session_state.pedido_detalhe
     st.title(f"📋 {pedido['mesa']}")
     for item,qtd in pedido["itens"].items():
         if qtd>0: st.write(f"{item} x{qtd} - R$ {qtd*precos[item]}")
     st.subheader(f"💰 Total: R$ {pedido['total']}")
     if st.button("⬅️ Voltar"):
-        st.session_state.pagina = "Relatório"
+        st.session_state.pagina = "relatorio"
 
 # =========================
 # PEDIDO (quando mesa acessada)
 # =========================
-if st.session_state.get("pagina") == "pedido" and st.session_state.get("mesa_atual"):
+if st.session_state.pagina == "pedido" and st.session_state.mesa_atual:
     mesa = st.session_state.mesa_atual
     pedido = st.session_state.mesas[mesa]
 

@@ -4,255 +4,197 @@ from datetime import datetime
 import os
 import pandas as pd
 import pytz
-
 import firebase_admin
 from firebase_admin import credentials, firestore
-
-# ===== FIREBASE =====
-if not firebase_admin._apps:
-    cred = credentials.Certificate(dict(st.secrets["firebase"]))
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
-
-def salvar_pedido(pedido):
-    db.collection("pedidos").add(pedido)
-
-# ===== PREÇOS FIREBASE =====
-precos_padrao = {"CARNE":8,"FRANGO":7,"CALABRESA":7,"CORAÇÃO":8,"QUEIJO":6,"MISTO":9,"COCA":6,"GUARANA":6,"HEINEKEN":10}
-
-def carregar_precos_firebase():
-    precos_ref = db.collection("precos")
-    docs = precos_ref.stream()
-    precos_carregados = {}
-    for doc in docs:
-        precos_carregados[doc.id] = doc.to_dict().get("valor", 0)
-    for item, valor in precos_padrao.items():
-        if item not in precos_carregados:
-            precos_carregados[item] = valor
-            db.collection("precos").document(item).set({"valor": valor})
-    return precos_carregados
-
-def salvar_preco_firebase(item, valor):
-    db.collection("precos").document(item).set({"valor": valor})
 
 # ===== CONFIGURAÇÃO STREAMLIT =====
 st.set_page_config(page_title="Brava Brasa", page_icon="🔥", layout="wide")
 
-# ===== ESTILO =====
+# ===== FIREBASE (CONEXÃO SEGURA) =====
+if not firebase_admin._apps:
+    try:
+        cred = credentials.Certificate(dict(st.secrets["firebase"]))
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        st.error(f"Erro ao conectar ao Firebase: {e}")
+
+db = firestore.client()
+
+# ===== FUNÇÕES DE DADOS =====
+def salvar_pedido_firebase(pedido):
+    db.collection("pedidos").add(pedido)
+
+def carregar_precos():
+    precos_padrao = {
+        "CARNE": 8, "FRANGO": 7, "CALABRESA": 7, "CORAÇÃO": 8, 
+        "QUEIJO": 6, "MISTO": 9, "COCA": 6, "GUARANA": 6, "HEINEKEN": 10
+    }
+    try:
+        precos_ref = db.collection("precos").stream()
+        precos_carregados = {doc.id: doc.to_dict().get("valor", 0) for doc in precos_ref}
+        
+        # Preenche com padrão se o Firebase estiver vazio
+        for item, valor in precos_padrao.items():
+            if item not in precos_carregados:
+                precos_carregados[item] = valor
+                db.collection("precos").document(item).set({"valor": valor})
+        return precos_carregados
+    except:
+        return precos_padrao
+
+def salvar_preco_firebase(item, valor):
+    db.collection("precos").document(item).set({"valor": valor})
+
+# ===== ESTILO CSS CUSTOMIZADO =====
 st.markdown("""
 <style>
-.stApp{background:#ffffff;font-family:sans-serif;}
-.title{text-align:center;color:#ff6600;font-size:40px;font-weight:bold;}
-.card{background:white;padding:15px;border-radius:15px;box-shadow:0 3px 10px rgba(0,0,0,0.1);margin-bottom:15px;text-align:center;}
-button{background:#ff6600 !important;color:white !important;border-radius:8px !important;height:45px;width:100%;font-size:16px;}
-.total{font-size:28px;color:#ff6600;font-weight:bold;text-align:center;}
-.counter{text-align:center;color:#ff6600;font-weight:bold;font-size:20px;margin-bottom:10px;}
+    .main { background-color: #f8f9fa; }
+    .stButton>button {
+        width: 100%;
+        border-radius: 10px;
+        height: 3em;
+        font-weight: bold;
+    }
+    .btn-mais { background-color: #28a745 !important; color: white !important; }
+    .btn-menos { background-color: #dc3545 !important; color: white !important; }
+    .card-mesa {
+        padding: 20px;
+        border-radius: 15px;
+        border: 1px solid #ddd;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .total-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: #ff6600;
+        color: white;
+        text-align: center;
+        padding: 15px;
+        font-size: 24px;
+        font-weight: bold;
+        z-index: 100;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🔥 BRAVA BRASA</div>', unsafe_allow_html=True)
-
-# ===== TIMEZONE BRASIL =====
+# ===== INICIALIZAÇÃO DE ESTADO =====
 BRASIL = pytz.timezone("America/Sao_Paulo")
+precos = carregar_precos()
 
-# ===== ARQUIVO LOCAL =====
-ARQUIVO = "historico.json"
-def carregar_json_local():
-    if os.path.exists(ARQUIVO):
-        with open(ARQUIVO, "r") as f:
-            return json.load(f)
-    return []
+if "pagina" not in st.session_state: st.session_state.pagina = "mesas"
+if "mesa_selecionada" not in st.session_state: st.session_state.mesa_selecionada = None
+if "pedidos_ativos" not in st.session_state: st.session_state.pedidos_ativos = {}
 
-def salvar_json_local(dados):
-    with open(ARQUIVO, "w") as f:
-        json.dump(dados, f)
+# ===== NAVEGAÇÃO =====
+st.sidebar.title("🔥 Brava Brasa")
+opcao = st.sidebar.radio("Navegação", ["Mesas", "Relatórios", "Ajustar Preços"])
 
-# ===== CARREGA PREÇOS =====
-precos = carregar_precos_firebase()
-
-def nova_mesa():
-    return {"itens": {i:0 for i in precos}, "fechado": False, "iniciado": False}
-
-# ===== ESTADO =====
-if "mesas" not in st.session_state:
-    st.session_state.mesas = {}
-if "pagina" not in st.session_state:
-    st.session_state.pagina = "mesas"
-if "mesa_atual" not in st.session_state:
-    st.session_state.mesa_atual = None
-if "historico" not in st.session_state:
-    historico = carregar_json_local()
-    pedidos_firebase = db.collection("pedidos").stream()
-    for doc in pedidos_firebase:
-        p = doc.to_dict()
-        itens_padronizados = {item: p.get("itens", {}).get(item, 0) for item in precos}
-        p["itens"] = itens_padronizados
-        if p not in historico:
-            historico.append(p)
-    st.session_state.historico = historico
-if "pedido_detalhe" not in st.session_state:
-    st.session_state.pedido_detalhe = None
+if opcao == "Relatórios": st.session_state.pagina = "relatorios"
+elif opcao == "Ajustar Preços": st.session_state.pagina = "precos"
+else: 
+    if st.session_state.pagina not in ["pedido"]: st.session_state.pagina = "mesas"
 
 # =========================
-# MENU LATERAL
-# =========================
-menu = st.sidebar.selectbox("Menu", ["Mesas / Pedidos", "Ajustar Preços", "Relatório"])
-
-# Sincroniza menu com página
-if menu == "Mesas / Pedidos":
-    if st.session_state.pagina not in ["pedido", "detalhe"]:
-        st.session_state.pagina = "mesas"
-elif menu == "Ajustar Preços":
-    st.session_state.pagina = "ajustar_precos"
-elif menu == "Relatório":
-    st.session_state.pagina = "relatorio"
-
-# =========================
-# MESAS / PEDIDOS
+# PÁGINA: GESTÃO DE MESAS
 # =========================
 if st.session_state.pagina == "mesas":
-    st.subheader("🪑 Mesas")
-    st.markdown(f'<div class="counter">Pedidos salvos hoje: {len(st.session_state.historico)}</div>', unsafe_allow_html=True)
-
-    mesas = ["Mesa 1","Mesa 2","Mesa 3","Mesa 4"]
-    for i in range(0, len(mesas), 2):
-        cols = st.columns(2)
-        for j in range(2):
-            if i+j < len(mesas):
-                mesa = mesas[i+j]
-                status = "🔴 Ocupada" if st.session_state.mesas.get(mesa, {}).get("iniciado", False) else "🟢 Livre"
-                with cols[j]:
-                    st.markdown(f'<div class="card"><h2>{mesa}</h2><p>{status}</p></div>', unsafe_allow_html=True)
-                    if st.button(f"Acessar {mesa}", key=f"acessar_{mesa}"):
-                        if mesa not in st.session_state.mesas:
-                            st.session_state.mesas[mesa] = nova_mesa()
-                        st.session_state.mesa_atual = mesa
-                        st.session_state.pagina = "confirmacao"  # Nova tela de confirmação
-
-# =========================
-# CONFIRMAÇÃO ABRIR MESA
-# =========================
-if st.session_state.pagina == "confirmacao" and st.session_state.mesa_atual:
-    mesa = st.session_state.mesa_atual
-    st.subheader(f"📋 {mesa}")
-    st.info("Deseja iniciar o pedido para esta mesa?")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ Iniciar Pedido", key=f"iniciar_{mesa}"):
-            st.session_state.mesas[mesa]["iniciado"] = True
-            st.session_state.pagina = "pedido"
-    with col2:
-        if st.button("❌ Cancelar", key=f"cancelar_{mesa}"):
-            st.session_state.mesa_atual = None
-            st.session_state.pagina = "mesas"
+    st.header("🪑 Mesas Ativas")
+    mesas_lista = [f"Mesa {i}" for i in range(1, 11)]
+    
+    cols = st.columns(2)
+    for idx, nome_mesa in enumerate(mesas_lista):
+        with cols[idx % 2]:
+            esta_ocupada = nome_mesa in st.session_state.pedidos_ativos
+            cor = "🔴" if esta_ocupada else "🟢"
+            
+            st.markdown(f"""<div class="card-mesa"><h3>{cor} {nome_mesa}</h3></div>""", unsafe_allow_html=True)
+            if st.button(f"Abrir/Ver {nome_mesa}", key=f"btn_{nome_mesa}"):
+                if nome_mesa not in st.session_state.pedidos_ativos:
+                    st.session_state.pedidos_ativos[nome_mesa] = {item: 0 for item in precos}
+                st.session_state.mesa_selecionada = nome_mesa
+                st.session_state.pagina = "pedido"
+                st.rerun()
 
 # =========================
-# AJUSTAR PREÇOS
+# PÁGINA: LANÇAR PEDIDO
 # =========================
-elif st.session_state.pagina == "ajustar_precos":
-    st.subheader("⚙️ Ajustar Preços")
-    for item in precos:
-        novo_valor = st.number_input(f"{item}", min_value=0, value=precos[item], step=1)
-        if novo_valor != precos[item]:
-            precos[item] = novo_valor
-            salvar_preco_firebase(item, novo_valor)
-            st.success(f"Preço de {item} atualizado para R$ {novo_valor}")
-
-# =========================
-# RELATÓRIO
-# =========================
-elif st.session_state.pagina == "relatorio":
-    st.subheader("📊 Relatório")
-    st.session_state.historico = [doc.to_dict() for doc in db.collection("pedidos").stream()]
-
-    if st.session_state.historico:
-        df = pd.DataFrame(st.session_state.historico)
-        df['data'] = pd.to_datetime(df['data'])
-        df_agrupado = df.groupby(df['data'].dt.date)['total'].sum().reset_index()
-        st.bar_chart(df_agrupado.rename(columns={'data':'index'}).set_index('index')['total'])
+elif st.session_state.pagina == "pedido":
+    mesa = st.session_state.mesa_selecionada
+    st.header(f"📝 Pedido: {mesa}")
+    
+    if st.button("⬅️ Voltar para Mesas"):
+        st.session_state.pagina = "mesas"
+        st.rerun()
 
     st.divider()
-    st.subheader("📋 Pedidos")
-    for i, pedido in enumerate(st.session_state.historico):
-        if st.button(f"{pedido['hora']} - {pedido['mesa']} - R$ {pedido['total']}", key=f"hist{i}"):
-            st.session_state.pedido_detalhe = pedido
-            st.session_state.pagina = "detalhe"
+    
+    # Grid de Itens
+    for item, valor in precos.items():
+        c1, c2, c3, c4 = st.columns([3, 2, 1, 2])
+        qtd_atual = st.session_state.pedidos_ativos[mesa][item]
+        
+        with c1: st.markdown(f"**{item}**\nR$ {valor}")
+        with c2:
+            if st.button(f"➕", key=f"add_{item}"):
+                st.session_state.pedidos_ativos[mesa][item] += 1
+                st.rerun()
+        with c3: st.markdown(f"### {qtd_atual}")
+        with c4:
+            if st.button(f"➖", key=f"sub_{item}"):
+                if st.session_state.pedidos_ativos[mesa][item] > 0:
+                    st.session_state.pedidos_ativos[mesa][item] -= 1
+                    st.rerun()
 
-# =========================
-# DETALHE
-# =========================
-if st.session_state.pagina == "detalhe" and st.session_state.pedido_detalhe:
-    pedido = st.session_state.pedido_detalhe
-    st.title(f"📋 {pedido['mesa']}")
-    for item,qtd in pedido["itens"].items():
-        if qtd>0: st.write(f"{item} x{qtd} - R$ {qtd*precos[item]}")
-    st.subheader(f"💰 Total: R$ {pedido['total']}")
-    if st.button("⬅️ Voltar"):
-        st.session_state.pagina = "relatorio"
+    # Cálculo Total
+    total = sum(st.session_state.pedidos_ativos[mesa][i] * precos[i] for i in precos)
+    
+    st.markdown(f"<div class='total-footer'>TOTAL: R$ {total:.2f}</div>", unsafe_allow_html=True)
+    st.write("\n\n") # Espaço para o footer não cobrir o botão
 
-# =========================
-# PEDIDO (quando mesa acessada)
-# =========================
-if st.session_state.pagina == "pedido" and st.session_state.mesa_atual:
-    mesa = st.session_state.mesa_atual
-    pedido = st.session_state.mesas[mesa]
-
-    st.subheader(f"📋 {mesa}")
-
-    if pedido["fechado"]:
-        st.error("🔒 Pedido FECHADO")
-    else:
-        st.success("🟢 Pedido ABERTO")
-
-    st.divider()
-    st.subheader("🍢 Itens")
-    cols = st.columns(3)
-    for i,item in enumerate(precos):
-        with cols[i%3]:
-            if st.button(item, key=f"{item}_{mesa}") and not pedido["fechado"]:
-                st.session_state.mesas[mesa]["itens"][item] += 1
-
-    st.divider()
-    total = sum(qtd*precos[item] for item,qtd in pedido["itens"].items() if qtd>0)
-    for item,qtd in pedido["itens"].items():
-        if qtd>0:
-            valor = qtd * precos[item]
-            col1,col2,col3 = st.columns([4,1,1])
-            with col1: st.write(f"{item} x{qtd}")
-            with col2: st.write(f"R$ {valor}")
-            with col3:
-                if st.button("➖",key=f"menos_{item}_{mesa}") and not pedido["fechado"]:
-                    st.session_state.mesas[mesa]["itens"][item] -= 1
-
-    st.markdown(f"<div class='total'>Total: R$ {total}</div>",unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if not pedido["fechado"]:
-            if st.button("🔒 Fechar", key=f"fechar_{mesa}"):
-                st.session_state.mesas[mesa]["fechado"] = True
-        elif pedido["fechado"]:
-            if st.button("🔓 Reabrir", key=f"reabrir_{mesa}"):
-                st.session_state.mesas[mesa]["fechado"] = False
-    with col2:
-        if st.button("❌ Encerrar", key=f"encerrar_{mesa}"):
+    if total > 0:
+        if st.button("✅ FINALIZAR E SALVAR", use_container_width=True):
             agora = datetime.now(BRASIL)
-            novo = {
+            dados_final = {
                 "mesa": mesa,
-                "itens": pedido["itens"],
+                "itens": {k: v for k, v in st.session_state.pedidos_ativos[mesa].items() if v > 0},
                 "total": total,
                 "data": agora.strftime("%Y-%m-%d"),
-                "hora": agora.strftime("%H:%M")
+                "hora": agora.strftime("%H:%M"),
+                "timestamp": agora
             }
-            st.session_state.historico.append(novo)
-            salvar_json_local(st.session_state.historico)
-            salvar_pedido(novo)
-            st.success("✅ Pedido salvo no Firebase!")
-            st.json(novo)
-            del st.session_state.mesas[mesa]
-            st.session_state.mesa_atual = None
+            salvar_pedido_firebase(dados_final)
+            del st.session_state.pedidos_ativos[mesa]
+            st.success("Pedido enviado com sucesso!")
             st.session_state.pagina = "mesas"
-    with col3:
-        if st.button("⬅️ Voltar", key=f"voltar_{mesa}"):
-            st.session_state.mesa_atual = None
-            st.session_state.pagina = "mesas"
+            st.rerun()
+
+# =========================
+# PÁGINA: AJUSTAR PREÇOS
+# =========================
+elif st.session_state.pagina == "precos":
+    st.header("⚙️ Ajustar Valores")
+    for item, valor in precos.items():
+        novo_v = st.number_input(f"Preço {item}", value=float(valor), step=0.5, key=f"edit_{item}")
+        if novo_v != float(valor):
+            salvar_preco_firebase(item, novo_v)
+            st.toast(f"Preço de {item} atualizado!")
+
+# =========================
+# PÁGINA: RELATÓRIOS
+# =========================
+elif st.session_state.pagina == "relatorios":
+    st.header("📊 Vendas de Hoje")
+    hoje = datetime.now(BRASIL).strftime("%Y-%m-%d")
+    
+    pedidos_ref = db.collection("pedidos").where("data", "==", hoje).stream()
+    lista_pedidos = [p.to_dict() for p in pedidos_ref]
+    
+    if lista_pedidos:
+        df = pd.DataFrame(lista_pedidos)
+        st.metric("Faturamento Total Hoje", f"R$ {df['total'].sum():.2f}")
+        st.dataframe(df[['hora', 'mesa', 'total']])
+    else:
+        st.info("Nenhum pedido realizado hoje.")

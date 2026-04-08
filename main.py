@@ -78,26 +78,28 @@ if "pedidos_ativos" not in st.session_state:
 if "pagina" not in st.session_state: st.session_state.pagina = "mesas"
 if "mesa_atual" not in st.session_state: st.session_state.mesa_atual = None
 
-# ===== ESTILO CSS (TRAVA LAYOUT MOBILE) =====
+# ===== ESTILO CSS ATUALIZADO =====
 st.markdown("""
 <style>
-    /* Forçar colunas a não quebrarem no celular */
+    /* Forçar colunas a ficarem lado a lado mesmo no mobile */
     [data-testid="column"] {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-width: 0px !important;
-        flex-basis: 0 !important;
-        flex-grow: 1 !important;
+        width: 50% !important;
+        flex: 1 1 50% !important;
+        min-width: 45% !important;
     }
-    /* Estilo dos Botões */
+    
+    /* Container para evitar quebra de linha indesejada */
+    [data-testid="stHorizontalBlock"] {
+        display: flex;
+        flex-wrap: wrap;
+        flex-direction: row !important;
+    }
+
+    /* Estilo dos Botões e Cards */
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; margin-bottom: 5px; }
-    .card-mesa { padding: 10px; border-radius: 12px; text-align: center; margin-bottom: 5px; }
+    .card-mesa { padding: 10px; border-radius: 12px; text-align: center; margin-top: 10px; }
     .total-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #ff6600; color: white; 
                  text-align: center; padding: 15px; font-size: 22px; font-weight: bold; z-index: 999; border-top: 2px solid white; }
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { background-color: #f0f2f6; border-radius: 5px; padding: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -112,26 +114,42 @@ else:
     if st.session_state.pagina not in ["pedido"]: st.session_state.pagina = "mesas"
 
 # =========================
-# PÁGINA: MESAS
+# PÁGINA: MESAS (LÓGICA CORRIGIDA)
 # =========================
 if st.session_state.pagina == "mesas":
     st.header("🍽️ Mesas Ativas")
     
-    # Garantir que a lista de mesas para exibição está sempre em ordem 1, 2, 3...
     lista_mesas = [f"Mesa {i}" for i in range(1, 13)]
     
-    cols = st.columns(2)
-    for i, nome in enumerate(lista_mesas):
-        with cols[i % 2]:
-            itens_mesa = st.session_state.pedidos_ativos.get(nome, {})
+    # Criamos as colunas fora do loop para garantir o alinhamento
+    # Usamos o loop para preencher as linhas corretamente
+    for i in range(0, len(lista_mesas), 2):
+        cols = st.columns(2) # Cria uma "linha" com 2 colunas
+        
+        # Mesa da Esquerda (Par)
+        nome_esq = lista_mesas[i]
+        with cols[0]:
+            itens_mesa = st.session_state.pedidos_ativos.get(nome_esq, {})
             ocupada = any(v > 0 for v in itens_mesa.values())
             cor = "#ff4b4b" if ocupada else "#28a745"
-            
-            st.markdown(f'<div class="card-mesa" style="border: 2px solid {cor};"><b>{nome}</b></div>', unsafe_allow_html=True)
-            if st.button(f"Abrir", key=f"btn_{nome}"):
-                st.session_state.mesa_atual = nome
+            st.markdown(f'<div class="card-mesa" style="border: 2px solid {cor};"><b>{nome_esq}</b></div>', unsafe_allow_html=True)
+            if st.button(f"Abrir", key=f"btn_{nome_esq}"):
+                st.session_state.mesa_atual = nome_esq
                 st.session_state.pagina = "pedido"
                 st.rerun()
+        
+        # Mesa da Direita (Ímpar) - Verifica se existe (caso tenha número ímpar de mesas)
+        if i + 1 < len(lista_mesas):
+            nome_dir = lista_mesas[i+1]
+            with cols[1]:
+                itens_mesa = st.session_state.pedidos_ativos.get(nome_dir, {})
+                ocupada = any(v > 0 for v in itens_mesa.values())
+                cor = "#ff4b4b" if ocupada else "#28a745"
+                st.markdown(f'<div class="card-mesa" style="border: 2px solid {cor};"><b>{nome_dir}</b></div>', unsafe_allow_html=True)
+                if st.button(f"Abrir", key=f"btn_{nome_dir}"):
+                    st.session_state.mesa_atual = nome_dir
+                    st.session_state.pagina = "pedido"
+                    st.rerun()
 
 # =========================
 # PÁGINA: PEDIDO (CARDÁPIO)

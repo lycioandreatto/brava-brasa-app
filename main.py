@@ -183,18 +183,57 @@ elif st.session_state.pagina == "precos":
             st.toast(f"Preço de {item} atualizado!")
 
 # =========================
-# PÁGINA: RELATÓRIOS
+# PÁGINA: RELATÓRIOS (DETALHADO)
 # =========================
 elif st.session_state.pagina == "relatorios":
-    st.header("📊 Vendas de Hoje")
-    hoje = datetime.now(BRASIL).strftime("%Y-%m-%d")
+    st.header("📊 Relatório Detalhado")
     
-    pedidos_ref = db.collection("pedidos").where("data", "==", hoje).stream()
+    # Seletor de Data (Padrão: Hoje)
+    data_selecionada = st.date_input("Selecione a data", datetime.now(BRASIL))
+    data_str = data_selecionada.strftime("%Y-%m-%d")
+    
+    # Busca no Firebase
+    pedidos_ref = db.collection("pedidos").where("data", "==", data_str).order_by("hora", direction=firestore.Query.DESCENDING).stream()
     lista_pedidos = [p.to_dict() for p in pedidos_ref]
     
     if lista_pedidos:
         df = pd.DataFrame(lista_pedidos)
-        st.metric("Faturamento Total Hoje", f"R$ {df['total'].sum():.2f}")
-        st.dataframe(df[['hora', 'mesa', 'total']])
+        
+        # Resumo no topo
+        c1, c2 = st.columns(2)
+        with c1:
+            st.metric("Total de Pedidos", len(lista_pedidos))
+        with c2:
+            st.metric("Faturamento Total", f"R$ {df['total'].sum():.2f}")
+        
+        st.divider()
+        st.subheader("📋 Lista de Comandas")
+
+        # Exibição Detalhada
+        for p in lista_pedidos:
+            # Criamos um "expander" (sanfona) para cada pedido
+            with st.expander(f"🕒 {p['hora']} - {p['mesa']} | Total: R$ {p['total']:.2f}"):
+                st.write("---")
+                # Criar uma tabelinha para os itens deste pedido específico
+                itens_pedido = p.get("itens", {})
+                if itens_pedido:
+                    # Montando os dados para exibir
+                    dados_tabela = []
+                    for nome_item, qtd in itens_pedido.items():
+                        preco_unit = precos.get(nome_item, 0)
+                        subtotal = qtd * preco_unit
+                        dados_tabela.append({
+                            "Item": nome_item,
+                            "Qtd": qtd,
+                            "Preço Unit.": f"R$ {preco_unit:.2f}",
+                            "Subtotal": f"R$ {subtotal:.2f}"
+                        })
+                    
+                    st.table(pd.DataFrame(dados_tabela))
+                else:
+                    st.warning("Nenhum item registrado neste pedido.")
+                
+                st.caption(f"ID do Pedido: {p.get('timestamp')}")
+
     else:
-        st.info("Nenhum pedido realizado hoje.")
+        st.info(f"Nenhum pedido encontrado para o dia {data_selecionada.strftime('%d/%m/%Y')}.")

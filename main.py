@@ -4,6 +4,17 @@ from datetime import datetime
 import os
 import pandas as pd
 
+
+import firebase_admin
+from firebase_admin import credentials, firestore
+import streamlit as st
+
+if not firebase_admin._apps:
+    cred = credentials.Certificate(st.secrets["firebase"])
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+
 st.set_page_config(page_title="Brava Brasa", page_icon="🔥", layout="wide")
 
 # 🎨 ESTILO

@@ -120,9 +120,9 @@ def nova_mesa():
 # =========================
 # BOTÃO RELATÓRIO
 # =========================
-if st.button("📊 Relatório"):
-    st.session_state.pagina = "relatorio"
-    st.experimental_rerun()
+if st.session_state.pagina != "relatorio":
+    if st.button("📊 Relatório"):
+        st.session_state.pagina = "relatorio"
 
 # =========================
 # MESAS
@@ -151,7 +151,6 @@ if st.session_state.pagina == "mesas":
                     st.session_state.mesas[mesa] = nova_mesa()
                 st.session_state.mesa_atual = mesa
                 st.session_state.pagina = "pedido"
-                st.experimental_rerun()
 
 # =========================
 # PEDIDO
@@ -176,7 +175,6 @@ elif st.session_state.pagina == "pedido":
             if st.button(item, key=f"{item}_{mesa}"):
                 if not pedido["fechado"]:
                     st.session_state.mesas[mesa]["itens"][item] += 1
-                    st.experimental_rerun()
 
     st.divider()
     total = sum(qtd*precos[item] for item,qtd in pedido["itens"].items() if qtd>0)
@@ -193,7 +191,6 @@ elif st.session_state.pagina == "pedido":
                 if st.button("➖",key=f"menos_{item}_{mesa}"):
                     if not pedido["fechado"]:
                         st.session_state.mesas[mesa]["itens"][item] -= 1
-                        st.experimental_rerun()
 
     st.markdown(f"<div class='total'>Total: R$ {total}</div>",unsafe_allow_html=True)
     col1,col2,col3=st.columns(3)
@@ -202,11 +199,9 @@ elif st.session_state.pagina == "pedido":
         if not pedido["fechado"]:
             if st.button("🔒 Fechar", key=f"fechar_{mesa}"):
                 st.session_state.mesas[mesa]["fechado"] = True
-                st.experimental_rerun()
         else:
             if st.button("🔓 Reabrir", key=f"reabrir_{mesa}"):
                 st.session_state.mesas[mesa]["fechado"] = False
-                st.experimental_rerun()
 
     with col2:
         if st.button("❌ Encerrar", key=f"encerrar_{mesa}"):
@@ -223,12 +218,10 @@ elif st.session_state.pagina == "pedido":
             st.json(novo)
             del st.session_state.mesas[mesa]
             st.session_state.pagina="mesas"
-            st.experimental_rerun()
 
     with col3:
         if st.button("⬅️ Voltar", key=f"voltar_{mesa}"):
             st.session_state.pagina="mesas"
-            st.experimental_rerun()
 
 # =========================
 # RELATÓRIO
@@ -237,7 +230,6 @@ elif st.session_state.pagina == "relatorio":
     st.title("📊 Relatório")
     if st.button("⬅️ Voltar"):
         st.session_state.pagina = "mesas"
-        st.experimental_rerun()
 
     hoje = datetime.now().strftime("%Y-%m-%d")
     pedidos = [p for p in st.session_state.historico if p["data"] == hoje]
@@ -254,7 +246,6 @@ elif st.session_state.pagina == "relatorio":
         if st.button(f"{pedido['hora']} - {pedido['mesa']} - R$ {pedido['total']}", key=f"hist{i}"):
             st.session_state.pedido_detalhe = pedido
             st.session_state.pagina = "detalhe"
-            st.experimental_rerun()
 
 # =========================
 # DETALHE
@@ -271,4 +262,3 @@ elif st.session_state.pagina == "detalhe":
     st.subheader(f"💰 Total: R$ {pedido['total']}")
     if st.button("⬅️ Voltar"):
         st.session_state.pagina = "relatorio"
-        st.experimental_rerun()

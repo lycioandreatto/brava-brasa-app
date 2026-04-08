@@ -139,6 +139,12 @@ elif st.session_state.pagina == "pedido":
 
     st.subheader(f"📋 {mesa}")
 
+    # STATUS
+    if pedido["fechado"]:
+        st.error("🔒 Pedido FECHADO")
+    else:
+        st.success("🟢 Pedido ABERTO")
+
     st.divider()
 
     st.subheader("🍢 Itens")
@@ -148,7 +154,9 @@ elif st.session_state.pagina == "pedido":
     for i,item in enumerate(precos):
         with cols[i%3]:
             if st.button(item):
-                pedido["itens"][item]+=1
+                if not pedido["fechado"]:
+                    pedido["itens"][item]+=1
+                    st.rerun()
 
     st.divider()
 
@@ -167,16 +175,26 @@ elif st.session_state.pagina == "pedido":
                 st.write(f"R$ {valor}")
             with col3:
                 if st.button("➖",key=f"{item}{mesa}"):
-                    pedido["itens"][item]-=1
+                    if not pedido["fechado"]:
+                        pedido["itens"][item]-=1
+                        st.rerun()
 
     st.markdown(f"<div class='total'>Total: R$ {total}</div>",unsafe_allow_html=True)
 
     col1,col2,col3=st.columns(3)
 
+    # FECHAR / REABRIR
     with col1:
-        if st.button("🔒 Fechar"):
-            pedido["fechado"]=True
+        if not pedido["fechado"]:
+            if st.button("🔒 Fechar"):
+                pedido["fechado"]=True
+                st.rerun()
+        else:
+            if st.button("🔓 Reabrir"):
+                pedido["fechado"]=False
+                st.rerun()
 
+    # ENCERRAR
     with col2:
         if st.button("❌ Encerrar"):
 
@@ -195,6 +213,7 @@ elif st.session_state.pagina == "pedido":
             st.session_state.pagina="mesas"
             st.rerun()
 
+    # VOLTAR
     with col3:
         if st.button("⬅️ Voltar"):
             st.session_state.pagina="mesas"
@@ -231,7 +250,7 @@ elif st.session_state.pagina == "relatorio":
             st.session_state.pagina = "detalhe"
 
 # =========================
-# DETALHE DO PEDIDO
+# DETALHE
 # =========================
 elif st.session_state.pagina == "detalhe":
 

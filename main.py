@@ -4,6 +4,7 @@ import pytz
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
+import re
 
 # ===== CONFIGURAÇÃO DA PÁGINA =====
 st.set_page_config(page_title="Brava Brasa", page_icon="🔥", layout="wide")
@@ -19,7 +20,6 @@ if not firebase_admin._apps:
 db = firestore.client()
 
 # ===== ESTRUTURA DO CARDÁPIO =====
-# Organizado por categorias para facilitar a navegação
 CARDAPIO_ESTRUTURA = {
     "🍢 ESPETINHOS": [
         "CARNE", "FRANGO", "CALABRESA", "MISTO", "CORAÇÃO", "QUEIJO"
@@ -32,11 +32,9 @@ CARDAPIO_ESTRUTURA = {
 }
 
 def carregar_precos():
-    """Busca preços do Firebase ou define padrões iniciais"""
     precos_ref = db.collection("precos").stream()
     carregados = {doc.id: doc.to_dict().get("valor", 0.0) for doc in precos_ref}
     
-    # Valores padrão caso o banco esteja vazio
     padrao = {
         "CARNE": 8.0, "FRANGO": 7.0, "CALABRESA": 7.0, "MISTO": 9.0, "CORAÇÃO": 8.0, "QUEIJO": 7.0,
         "COCA LATA": 6.0, "FANTA LATA": 6.0, "GUARANÁ LATA": 6.0, "ÁGUA MINERAL": 4.0,
@@ -61,26 +59,41 @@ def carregar_rascunhos_firebase():
     docs = db.collection("pedidos_pendentes").stream()
     return {doc.id: doc.to_dict().get("itens", {}) for doc in docs}
 
-# ===== INICIALIZAÇÃO =====
+# ===== INICIALIZAÇÃO E ORDENAÇÃO =====
 BRASIL = pytz.timezone("America/Sao_Paulo")
 precos = carregar_precos()
 
 if "pedidos_ativos" not in st.session_state:
     rascunhos = carregar_rascunhos_firebase()
-    for mesa in rascunhos:
+    # Criar lista de mesas de 1 a 12 de forma ordenada
+    mesas_ordenadas = {}
+    for i in range(1, 13):
+        nome_mesa = f"Mesa {i}"
         base = {item: 0 for cat in CARDAPIO_ESTRUTURA.values() for item in cat}
-        base.update(rascunhos[mesa])
-        rascunhos[mesa] = base
-    st.session_state.pedidos_ativos = rascunhos
+        if nome_mesa in rascunhos:
+            base.update(rascunhos[nome_mesa])
+        mesas_ordenadas[nome_mesa] = base
+    st.session_state.pedidos_ativos = mesas_ordenadas
 
 if "pagina" not in st.session_state: st.session_state.pagina = "mesas"
 if "mesa_atual" not in st.session_state: st.session_state.mesa_atual = None
 
-# ===== ESTILO CSS =====
+# ===== ESTILO CSS (TRAVA LAYOUT MOBILE) =====
 st.markdown("""
 <style>
+    /* Forçar colunas a não quebrarem no celular */
+    [data-testid="column"] {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 0px !important;
+        flex-basis: 0 !important;
+        flex-grow: 1 !important;
+    }
+    /* Estilo dos Botões */
     .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; font-weight: bold; margin-bottom: 5px; }
-    .card-mesa { padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 10px; }
+    .card-mesa { padding: 10px; border-radius: 12px; text-align: center; margin-bottom: 5px; }
     .total-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #ff6600; color: white; 
                  text-align: center; padding: 15px; font-size: 22px; font-weight: bold; z-index: 999; border-top: 2px solid white; }
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
@@ -102,8 +115,10 @@ else:
 # PÁGINA: MESAS
 # =========================
 if st.session_state.pagina == "mesas":
-    st.header("🪑 Mesas Ativas")
-    lista_mesas = [f"Mesa {i}" for i in range(1, 13)] # Aumentado para 12 mesas
+    st.header("🍽️ Mesas Ativas")
+    
+    # Garantir que a lista de mesas para exibição está sempre em ordem 1, 2, 3...
+    lista_mesas = [f"Mesa {i}" for i in range(1, 13)]
     
     cols = st.columns(2)
     for i, nome in enumerate(lista_mesas):
@@ -112,10 +127,8 @@ if st.session_state.pagina == "mesas":
             ocupada = any(v > 0 for v in itens_mesa.values())
             cor = "#ff4b4b" if ocupada else "#28a745"
             
-            st.markdown(f'<div class="card-mesa" style="border: 2px solid {cor};"><h3>{nome}</h3></div>', unsafe_allow_html=True)
-            if st.button(f"Abrir {nome}", key=f"btn_{nome}"):
-                if nome not in st.session_state.pedidos_ativos:
-                    st.session_state.pedidos_ativos[nome] = {item: 0 for cat in CARDAPIO_ESTRUTURA.values() for item in cat}
+            st.markdown(f'<div class="card-mesa" style="border: 2px solid {cor};"><b>{nome}</b></div>', unsafe_allow_html=True)
+            if st.button(f"Abrir", key=f"btn_{nome}"):
                 st.session_state.mesa_atual = nome
                 st.session_state.pagina = "pedido"
                 st.rerun()
@@ -125,37 +138,41 @@ if st.session_state.pagina == "mesas":
 # =========================
 elif st.session_state.pagina == "pedido":
     mesa = st.session_state.mesa_atual
-    st.header(f"📝 {mesa}")
     
-    if st.button("⬅️ Voltar"):
-        if not any(v > 0 for v in st.session_state.pedidos_ativos[mesa].values()):
-            if mesa in st.session_state.pedidos_ativos:
-                del st.session_state.pedidos_ativos[mesa]
-                db.collection("pedidos_pendentes").document(mesa).delete()
-        st.session_state.pagina = "mesas"
-        st.rerun()
+    # Cabeçalho compacto
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("⬅️ Voltar"):
+            st.session_state.pagina = "mesas"
+            st.rerun()
+    with c2:
+        st.write(f"### {mesa}")
 
-    # Divisão por Categoria usando Abas (Tabs)
     tab_esp, tab_beb = st.tabs(["🍢 ESPETINHOS", "🥤 BEBIDAS"])
 
     def render_categoria(lista_itens):
         for item in lista_itens:
             valor = precos.get(item, 0.0)
             qtd = st.session_state.pedidos_ativos[mesa].get(item, 0)
-            c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-            with c1: st.markdown(f"**{item}**\nR$ {valor:.2f}")
-            with c2:
-                if st.button("➕", key=f"add_{item}_{mesa}"):
-                    st.session_state.pedidos_ativos[mesa][item] += 1
-                    salvar_rascunho_firebase(mesa, st.session_state.pedidos_ativos[mesa])
-                    st.rerun()
-            with c3: st.markdown(f"### {qtd}")
-            with c4:
+            
+            # Layout de linha única travada pelo CSS acima
+            col_txt, col_men, col_num, col_mai = st.columns([2, 1, 1, 1])
+            with col_txt: 
+                st.markdown(f"**{item}**\nR$ {valor:.2f}")
+            with col_men:
                 if st.button("➖", key=f"sub_{item}_{mesa}"):
                     if st.session_state.pedidos_ativos[mesa][item] > 0:
                         st.session_state.pedidos_ativos[mesa][item] -= 1
                         salvar_rascunho_firebase(mesa, st.session_state.pedidos_ativos[mesa])
                         st.rerun()
+            with col_num: 
+                st.markdown(f"<h3 style='text-align:center;'>{qtd}</h3>", unsafe_allow_html=True)
+            with col_mai:
+                if st.button("➕", key=f"add_{item}_{mesa}"):
+                    st.session_state.pedidos_ativos[mesa][item] += 1
+                    salvar_rascunho_firebase(mesa, st.session_state.pedidos_ativos[mesa])
+                    st.rerun()
+            st.divider()
 
     with tab_esp: render_categoria(CARDAPIO_ESTRUTURA["🍢 ESPETINHOS"])
     with tab_beb: render_categoria(CARDAPIO_ESTRUTURA["🥤 BEBIDAS"])
@@ -176,8 +193,9 @@ elif st.session_state.pagina == "pedido":
             }
             db.collection("pedidos").add(pedido_final)
             db.collection("pedidos_pendentes").document(mesa).delete()
-            del st.session_state.pedidos_ativos[mesa]
-            st.success("Salvo!")
+            # Reseta a mesa no state para o padrão (vazia)
+            st.session_state.pedidos_ativos[mesa] = {item: 0 for cat in CARDAPIO_ESTRUTURA.values() for item in cat}
+            st.success("Pedido Salvo!")
             st.session_state.pagina = "mesas"
             st.rerun()
 
@@ -188,19 +206,14 @@ elif st.session_state.pagina == "relatorio":
     st.header("📊 Vendas")
     data_sel = st.date_input("Data", datetime.now(BRASIL))
     data_str = data_sel.strftime("%Y-%m-%d")
-    
     docs = db.collection("pedidos").where("data", "==", data_str).stream()
     vendas = sorted([d.to_dict() for d in docs], key=lambda x: x['hora'], reverse=True)
-    
     if vendas:
-        total_dia = sum(v['total'] for v in vendas)
-        st.metric("Total Vendido", f"R$ {total_dia:.2f}")
+        st.metric("Total Vendido", f"R$ {sum(v['total'] for v in vendas):.2f}")
         for v in vendas:
             with st.expander(f"{v['hora']} - {v['mesa']} | R$ {v['total']:.2f}"):
-                for item, qtd in v['itens'].items():
-                    st.write(f"{qtd}x {item}")
-    else:
-        st.info("Sem vendas.")
+                for item, qtd in v['itens'].items(): st.write(f"{qtd}x {item}")
+    else: st.info("Sem vendas.")
 
 # =========================
 # PÁGINA: AJUSTAR PREÇOS

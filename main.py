@@ -77,43 +77,59 @@ if "pedidos_ativos" not in st.session_state:
 if "pagina" not in st.session_state: st.session_state.pagina = "mesas"
 if "mesa_atual" not in st.session_state: st.session_state.mesa_atual = None
 
-# ===== ESTILO CSS (ULTRA COMPACTO) =====
+# ===== ESTILO CSS (FORÇA LINHA ÚNICA E CORRIGE CABEÇALHO) =====
 st.markdown("""
 <style>
-    .block-container { padding: 0.5rem 0.5rem !important; }
-    
-    /* Remove padding das colunas nativas */
-    div[data-testid="column"] { padding: 0px !important; flex-basis: content !important; }
+    /* Ajuste de margens gerais */
+    .block-container { padding: 1rem 0.5rem !important; }
 
-    /* Estilo dos Botões Gerais */
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
-    
-    /* Container dos Controles de Quantidade */
-    .qty-container {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: #f9f9f9;
-        padding: 5px;
-        border-radius: 10px;
-        border: 1px solid #ddd;
+    /* FORÇAR COLUNAS LADO A LADO NO MOBILE Sem Empilhar */
+    [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 5px !important;
     }
 
-    /* Botões de + e - (Sempre pequenos) */
-    .stButton>button[kind="secondary"] {
-        width: 40px !important;
-        height: 40px !important;
+    [data-testid="column"] {
+        width: auto !important;
+        flex: 1 1 auto !important;
+        min-width: 0px !important;
+    }
+
+    /* Botões de +/- compactos */
+    .stButton > button {
+        width: 100% !important;
+        height: 45px !important;
         padding: 0px !important;
-        font-size: 20px !important;
-        border: none !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+    }
+
+    /* Informação do Item (Texto) */
+    .item-label {
+        font-size: 14px;
+        font-weight: bold;
+        line-height: 1.2;
+        display: block;
+        min-width: 100px;
+    }
+
+    /* Barra de Total Fixa */
+    .total-bar {
+        position: fixed;
+        bottom: 0; left: 0; width: 100%;
+        background: #ff6600; color: white;
+        text-align: center; padding: 15px;
+        font-size: 20px; font-weight: bold;
+        z-index: 999; border-top: 2px solid white;
     }
 
     .card-mesa { padding: 10px; border-radius: 12px; text-align: center; margin-bottom: 5px; }
     
-    .total-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #ff6600; color: white; 
-                 text-align: center; padding: 12px; font-size: 20px; font-weight: bold; z-index: 999; border-top: 2px solid white; }
-    
-    .item-info { font-size: 14px; font-weight: bold; }
+    /* Remove espaços inúteis no topo */
+    .stAppHeader { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -151,13 +167,14 @@ if st.session_state.pagina == "mesas":
 elif st.session_state.pagina == "pedido":
     mesa = st.session_state.mesa_atual
     
-    col_v, col_m = st.columns([1, 2])
-    with col_v:
-        if st.button("⬅️ Sair"):
+    # Cabeçalho da página de pedidos
+    c_voltar, c_titulo = st.columns([1, 2])
+    with c_voltar:
+        if st.button("⬅️ Voltar"):
             st.session_state.pagina = "mesas"
             st.rerun()
-    with col_m:
-        st.subheader(f"📍 {mesa}")
+    with c_titulo:
+        st.subheader(mesa)
 
     tab_esp, tab_beb = st.tabs(["🍢 ESPETINHOS", "🥤 BEBIDAS"])
 
@@ -166,29 +183,28 @@ elif st.session_state.pagina == "pedido":
             valor = precos.get(item, 0.0)
             qtd = st.session_state.pedidos_ativos[mesa].get(item, 0)
             
-            # --- LINHA DO ITEM ---
-            st.markdown(f"<div class='item-info'>{item} - R$ {valor:.2f}</div>", unsafe_allow_html=True)
+            # LINHA TRAVADA: [NOME E PREÇO] [-] [QTD] [+]
+            col_info, col_menos, col_qtd, col_mais = st.columns([3, 1, 1, 1])
             
-            # Layout Horizontal Travado para celular
-            c_btn1, c_num, c_btn2 = st.columns([1, 1, 1])
+            with col_info:
+                st.markdown(f"<span class='item-label'>{item}<br>R$ {valor:.2f}</span>", unsafe_allow_html=True)
             
-            with c_btn1:
+            with col_menos:
                 if st.button("➖", key=f"sub_{item}_{mesa}"):
                     if st.session_state.pedidos_ativos[mesa][item] > 0:
                         st.session_state.pedidos_ativos[mesa][item] -= 1
                         salvar_rascunho_firebase(mesa, st.session_state.pedidos_ativos[mesa])
                         st.rerun()
             
-            with c_num:
+            with col_qtd:
                 st.markdown(f"<h3 style='text-align:center; margin:0;'>{qtd}</h3>", unsafe_allow_html=True)
                 
-            with c_btn2:
+            with col_mais:
                 if st.button("➕", key=f"add_{item}_{mesa}"):
                     st.session_state.pedidos_ativos[mesa][item] += 1
                     salvar_rascunho_firebase(mesa, st.session_state.pedidos_ativos[mesa])
                     st.rerun()
-            
-            st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
+            st.divider()
 
     with tab_esp: render_categoria(CARDAPIO_ESTRUTURA["🍢 ESPETINHOS"])
     with tab_beb: render_categoria(CARDAPIO_ESTRUTURA["🥤 BEBIDAS"])

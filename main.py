@@ -128,9 +128,24 @@ if st.session_state.pagina == "mesas":
                         if mesa not in st.session_state.mesas:
                             st.session_state.mesas[mesa] = nova_mesa()
                         st.session_state.mesa_atual = mesa
-                        # Abrir pedido automaticamente ao acessar mesa
-                        st.session_state.mesas[mesa]["iniciado"] = True
-                        st.session_state.pagina = "pedido"
+                        st.session_state.pagina = "confirmacao"  # Nova tela de confirmação
+
+# =========================
+# CONFIRMAÇÃO ABRIR MESA
+# =========================
+if st.session_state.pagina == "confirmacao" and st.session_state.mesa_atual:
+    mesa = st.session_state.mesa_atual
+    st.subheader(f"📋 {mesa}")
+    st.info("Deseja iniciar o pedido para esta mesa?")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Iniciar Pedido", key=f"iniciar_{mesa}"):
+            st.session_state.mesas[mesa]["iniciado"] = True
+            st.session_state.pagina = "pedido"
+    with col2:
+        if st.button("❌ Cancelar", key=f"cancelar_{mesa}"):
+            st.session_state.mesa_atual = None
+            st.session_state.pagina = "mesas"
 
 # =========================
 # AJUSTAR PREÇOS

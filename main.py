@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 import os
 import pandas as pd
-import pytz  # para timezone
+import pytz
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -77,8 +77,6 @@ def nova_mesa():
 # ===== ESTADO =====
 if "mesas" not in st.session_state:
     st.session_state.mesas = {}
-if "mesa_aberta" not in st.session_state:
-    st.session_state.mesa_aberta = {}
 if "pagina" not in st.session_state:
     st.session_state.pagina = "mesas"
 if "mesa_atual" not in st.session_state:
@@ -105,24 +103,25 @@ menu = st.sidebar.selectbox("Menu", ["Mesas / Pedidos", "Ajustar Preços", "Rela
 # MESAS / PEDIDOS
 # =========================
 if menu == "Mesas / Pedidos":
-    st.session_state.pagina = "mesas"
-    st.subheader("🪑 Mesas")
-    st.markdown(f'<div class="counter">Pedidos salvos hoje: {len(st.session_state.historico)}</div>', unsafe_allow_html=True)
+    # Só renderiza lista de mesas se não estivermos numa mesa aberta
+    if st.session_state.pagina == "mesas":
+        st.subheader("🪑 Mesas")
+        st.markdown(f'<div class="counter">Pedidos salvos hoje: {len(st.session_state.historico)}</div>', unsafe_allow_html=True)
 
-    mesas = ["Mesa 1","Mesa 2","Mesa 3","Mesa 4"]
-    for i in range(0, len(mesas), 2):
-        cols = st.columns(2)
-        for j in range(2):
-            if i+j < len(mesas):
-                mesa = mesas[i+j]
-                status = "🔴 Ocupada" if st.session_state.mesas.get(mesa, {}).get("iniciado", False) else "🟢 Livre"
-                with cols[j]:
-                    st.markdown(f'<div class="card"><h2>{mesa}</h2><p>{status}</p></div>', unsafe_allow_html=True)
-                    if st.button(f"Acessar {mesa}", key=f"acessar_{mesa}"):
-                        if mesa not in st.session_state.mesas:
-                            st.session_state.mesas[mesa] = nova_mesa()
-                        st.session_state.mesa_atual = mesa
-                        st.session_state.pagina = "pedido"
+        mesas = ["Mesa 1","Mesa 2","Mesa 3","Mesa 4"]
+        for i in range(0, len(mesas), 2):
+            cols = st.columns(2)
+            for j in range(2):
+                if i+j < len(mesas):
+                    mesa = mesas[i+j]
+                    status = "🔴 Ocupada" if st.session_state.mesas.get(mesa, {}).get("iniciado", False) else "🟢 Livre"
+                    with cols[j]:
+                        st.markdown(f'<div class="card"><h2>{mesa}</h2><p>{status}</p></div>', unsafe_allow_html=True)
+                        if st.button(f"Acessar {mesa}", key=f"acessar_{mesa}"):
+                            if mesa not in st.session_state.mesas:
+                                st.session_state.mesas[mesa] = nova_mesa()
+                            st.session_state.mesa_atual = mesa
+                            st.session_state.pagina = "pedido"
 
 # =========================
 # AJUSTAR PREÇOS
@@ -141,7 +140,6 @@ elif menu == "Ajustar Preços":
 # =========================
 elif menu == "Relatório":
     st.subheader("📊 Relatório")
-    # Atualiza pedidos do Firebase
     st.session_state.historico = [doc.to_dict() for doc in db.collection("pedidos").stream()]
 
     if st.session_state.historico:

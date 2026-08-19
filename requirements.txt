@@ -6,7 +6,7 @@ st-gsheets-connection
 xlsxwriter
 fpdf
 pytz
-streamlit-cookies-manager
+streamlit-cookies-manager-v2==0.3.1
 streamlit-js-eval
 folium
 streamlit-folium

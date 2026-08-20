@@ -9698,7 +9698,7 @@ elif menu_interna == "📊 ACOMP. DIÁRIO":
             return str(v)
 
     # ✅ Normaliza Cliente SEM PERDER cliente:
-    ddef _norm_cliente(df, col):
+     def _norm_cliente(df, col):
     if df is None or df.empty or col not in df.columns:
         return df
 

@@ -9673,7 +9673,7 @@ elif menu_interna == "📊 ACOMP. DIÁRIO":
         st.caption("")
 
 
-    # ============================
+        # ============================
     # ✅ CONTROLE DE ESTADO (Streamlit rerun)
     # ============================
     if "df_final_acomp_diario" not in st.session_state:
@@ -9699,19 +9699,20 @@ elif menu_interna == "📊 ACOMP. DIÁRIO":
 
     # ✅ Normaliza Cliente SEM PERDER cliente:
     def _norm_cliente(df, col):
-     if df is None or df.empty or col not in df.columns:
-      return df
+        if df is None or df.empty or col not in df.columns:
+            return df
 
-    # Converte primeiro para texto para evitar conflito
-    # entre strings e colunas int64 do Pandas/Arrow
-    df[col] = (
-        df[col]
-        .astype("string")
-        .str.strip()
-        .str.replace(r"\.0$", "", regex=True)
-    )
+        # Converte primeiro para texto para evitar conflito
+        # entre strings e colunas int64 do Pandas/Arrow
+        df[col] = (
+            df[col]
+            .astype("string")
+            .str.strip()
+            .str.replace(r"\.0$", "", regex=True)
+        )
 
-    return df
+        return df
+
     def _to_datetime_safe(s):
         return pd.to_datetime(s, errors="coerce", dayfirst=True)
 

@@ -9700,7 +9700,7 @@ elif menu_interna == "📊 ACOMP. DIÁRIO":
     # ✅ Normaliza Cliente SEM PERDER cliente:
     def _norm_cliente(df, col):
      if df is None or df.empty or col not in df.columns:
-    return df
+     return df
 
     # Converte primeiro para texto para evitar conflito
     # entre strings e colunas int64 do Pandas/Arrow

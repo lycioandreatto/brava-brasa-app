@@ -9698,24 +9698,20 @@ elif menu_interna == "📊 ACOMP. DIÁRIO":
             return str(v)
 
     # ✅ Normaliza Cliente SEM PERDER cliente:
-    def _norm_cliente(df, col):
-        if df is None or df.empty or col not in df.columns:
-            return df
-
-        s = df[col]
-        mask = s.notna()
-        s2 = s.copy()
-
-        s2.loc[mask] = (
-            s.loc[mask]
-            .astype(str)
-            .str.strip()
-            .str.replace(r"\.0$", "", regex=True)
-        )
-
-        df[col] = s2
+    ddef _norm_cliente(df, col):
+    if df is None or df.empty or col not in df.columns:
         return df
 
+    # Converte primeiro para texto para evitar conflito
+    # entre strings e colunas int64 do Pandas/Arrow
+    df[col] = (
+        df[col]
+        .astype("string")
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+
+    return df
     def _to_datetime_safe(s):
         return pd.to_datetime(s, errors="coerce", dayfirst=True)
 
